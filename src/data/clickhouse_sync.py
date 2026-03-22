@@ -184,7 +184,7 @@ def get_wallet_features(wallet_address: str) -> dict:
 
     columns = result.column_names
     row = result.result_rows[0]
-    return dict(zip(columns, row))
+    return dict(zip(columns, row, strict=True))
 
 
 def get_batch_features(wallet_addresses: list[str]) -> pd.DataFrame:

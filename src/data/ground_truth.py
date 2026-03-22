@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import enum
 import pathlib
-from typing import Optional
 
 import pandas as pd
 import structlog
@@ -30,7 +29,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class WalletLabel(str, enum.Enum):
+class WalletLabel(enum.StrEnum):
     """Archetype categories for wallet labelling."""
 
     SMART_MONEY = "smart_money"
@@ -444,7 +443,7 @@ _DEFAULT_GT_PATH = pathlib.Path("data/ground_truth.parquet")
 
 def save_ground_truth(
     df: pd.DataFrame,
-    path: Optional[pathlib.Path] = None,
+    path: pathlib.Path | None = None,
 ) -> pathlib.Path:
     """Persist ground-truth labels to a Parquet file.
 
@@ -468,7 +467,7 @@ def save_ground_truth(
 
 
 def load_ground_truth(
-    path: Optional[pathlib.Path] = None,
+    path: pathlib.Path | None = None,
 ) -> pd.DataFrame:
     """Load ground-truth labels from a Parquet file.
 
