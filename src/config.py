@@ -12,9 +12,10 @@ class Settings(BaseSettings):
     bigquery_source_dataset: str = "bigquery-public-data.crypto_ethereum"
 
     # Sampling
-    sample_window_days: int = 90
+    sample_window_days: int = 365
     min_wallet_tx_count: int = 10
-    min_wallet_eth_transacted: float = 1.0
+    min_wallet_eth_transacted: float = 1_000.0
+    max_wallets: int = 5_000
 
     # Clickhouse
     clickhouse_host: str = "localhost"
