@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
-from airflow.operators.python import BranchPythonOperator, PythonOperator
+from airflow.operators.python import BranchPythonOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 default_args = {
@@ -80,21 +80,21 @@ with DAG(
     # ── Step 6: Invalidate LLM cache ──────────────────────────────
     invalidate_cache = BashOperator(
         task_id="invalidate_llm_cache",
-        bash_command="python -c \"from src.llm.cache import NarrativeCache; NarrativeCache().invalidate()\"",
+        bash_command='python -c "from src.llm.cache import NarrativeCache; NarrativeCache().invalidate()"',
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
     )
 
     # ── Step 7: Regenerate cluster profiles ────────────────────────
     regen_profiles = BashOperator(
         task_id="generate_fresh_cluster_profiles",
-        bash_command="python -c \""
+        bash_command='python -c "'
         "from src.models.clustering import ClusteringPipeline; "
         "from src.llm.insight_generator import InsightGenerator; "
         "c = ClusteringPipeline.load('models/artifacts/clustering'); "
         "ig = InsightGenerator(); "
         "stats = c.get_cluster_stats(); "
         "[ig.generate_cluster_profile(cid, s, s.get('exemplar_addresses', [])) for cid, s in stats.items()]"
-        "\"",
+        '"',
     )
 
     # ── DAG wiring ─────────────────────────────────────────────────

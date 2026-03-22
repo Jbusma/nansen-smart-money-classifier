@@ -120,9 +120,10 @@ def run_training(
         logger.error("no_samples_after_merge")
         sys.exit(1)
 
-    # Separate features / labels
-    non_feature_cols = {"wallet_address", "label", "label_name", "updated_at", "first_seen", "last_seen"}
-    feature_cols = [c for c in df.columns if c not in non_feature_cols]
+    # Separate features / labels using the canonical 12-column schema
+    from src.features.feature_engineering import FEATURE_COLUMNS
+
+    feature_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
     x = df[feature_cols].values.astype(np.float32)
     y = df["label"].values.astype(np.int64)
 

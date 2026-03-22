@@ -87,7 +87,7 @@ class ClassifyResponse(BaseModel):
     label: str
     confidence: float
     probabilities: dict[str, float]
-    features: dict[str, float]
+    features: dict[str, object]
     latency_ms: float
 
 
@@ -96,7 +96,7 @@ class ExplainResponse(BaseModel):
     label: str
     confidence: float
     narrative: str
-    features: dict[str, float]
+    features: dict[str, object]
 
 
 class SimilarWalletsRequest(BaseModel):
@@ -132,21 +132,22 @@ class HealthResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _get_features(wallet_address: str) -> dict[str, float]:
+def _get_features(wallet_address: str) -> dict[str, object]:
     if _feature_store is None:
         raise HTTPException(503, "Feature store not initialized")
     features = _feature_store.get_features(wallet_address)
-    if features is None:
+    if not features:
         raise HTTPException(404, f"Wallet {wallet_address} not found in feature store")
-    return features
+    return dict(features)
 
 
-def _features_to_array(features: dict[str, float]) -> np.ndarray:
+def _features_to_array(features: dict[str, object]) -> np.ndarray:
     """Convert feature dict to array in the correct column order."""
     if _feature_store is None:
         raise HTTPException(503, "Feature store not initialized")
     names = _feature_store.get_feature_names()
-    return np.array([[features.get(n, 0.0) for n in names]])
+    vals = [features.get(n, 0.0) for n in names]
+    return np.array([[v if isinstance(v, (int, float)) else float(str(v)) for v in vals]])
 
 
 # ---------------------------------------------------------------------------

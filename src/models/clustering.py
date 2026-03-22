@@ -70,6 +70,7 @@ class ClusteringPipeline:
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
             core_dist_n_jobs=-1,
+            prediction_data=True,
         )
 
         # Populated after fit
