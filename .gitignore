@@ -40,7 +40,7 @@ node_modules/
 mcp_server/dist/
 
 # Data
-data/
+/data/
 *.csv
 *.parquet
 !tests/fixtures/*.csv
