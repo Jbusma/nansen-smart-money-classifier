@@ -60,10 +60,7 @@ class FeatureStore:
         dict[str, Any]
             Feature name -> value mapping.  Empty dict if not found.
         """
-        query = (
-            f"SELECT * FROM {self._database}.{_FEATURE_TABLE} "
-            f"WHERE wallet_address = %(addr)s LIMIT 1"
-        )
+        query = f"SELECT * FROM {self._database}.{_FEATURE_TABLE} WHERE wallet_address = %(addr)s LIMIT 1"
         result = self._client.query(query, parameters={"addr": wallet_address})
         if not result.result_rows:
             return {}
@@ -86,10 +83,7 @@ class FeatureStore:
         """
         if not addresses:
             return pd.DataFrame()
-        query = (
-            f"SELECT * FROM {self._database}.{_FEATURE_TABLE} "
-            f"WHERE wallet_address IN %(addrs)s"
-        )
+        query = f"SELECT * FROM {self._database}.{_FEATURE_TABLE} WHERE wallet_address IN %(addrs)s"
         result = self._client.query(query, parameters={"addrs": addresses})
         if not result.result_rows:
             return pd.DataFrame(columns=["wallet_address"] + _FEATURE_COLUMNS)
@@ -142,8 +136,7 @@ class FeatureStore:
             ``{feature_name: {"min": ..., "max": ..., "mean": ..., "std": ...}}``.
         """
         agg_exprs = ", ".join(
-            f"min({c}) AS {c}_min, max({c}) AS {c}_max, "
-            f"avg({c}) AS {c}_mean, stddevPop({c}) AS {c}_std"
+            f"min({c}) AS {c}_min, max({c}) AS {c}_max, avg({c}) AS {c}_mean, stddevPop({c}) AS {c}_std"
             for c in _FEATURE_COLUMNS
         )
         query = f"SELECT {agg_exprs} FROM {self._database}.{_FEATURE_TABLE}"

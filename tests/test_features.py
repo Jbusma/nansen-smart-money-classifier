@@ -19,13 +19,15 @@ from src.features.feature_engineering import (
 def _make_txs(timestamps, to_addresses=None, values=None, gas_prices=None):
     """Helper to build a transaction DataFrame."""
     n = len(timestamps)
-    df = pd.DataFrame({
-        "block_timestamp": pd.to_datetime(timestamps),
-        "from_address": ["0x" + "a" * 40] * n,
-        "to_address": to_addresses if to_addresses is not None else ["0x" + f"{i % 16:x}" * 40 for i in range(n)],
-        "value": values if values is not None else np.random.exponential(1.0, n),
-        "gas_price": gas_prices if gas_prices is not None else np.random.uniform(10, 100, n),
-    })
+    df = pd.DataFrame(
+        {
+            "block_timestamp": pd.to_datetime(timestamps),
+            "from_address": ["0x" + "a" * 40] * n,
+            "to_address": to_addresses if to_addresses is not None else ["0x" + f"{i % 16:x}" * 40 for i in range(n)],
+            "value": values if values is not None else np.random.exponential(1.0, n),
+            "gas_price": gas_prices if gas_prices is not None else np.random.uniform(10, 100, n),
+        }
+    )
     return df
 
 
@@ -106,10 +108,12 @@ class TestNormalization:
     def test_z_score_properties(self):
         """Z-score normalized features should have mean ≈ 0, std ≈ 1."""
         np.random.seed(42)
-        df = pd.DataFrame({
-            "feat_a": np.random.normal(100, 15, 1000),
-            "feat_b": np.random.normal(0.5, 0.1, 1000),
-        })
+        df = pd.DataFrame(
+            {
+                "feat_a": np.random.normal(100, 15, 1000),
+                "feat_b": np.random.normal(0.5, 0.1, 1000),
+            }
+        )
         normalized = normalize_features(df)
         for col in normalized.columns:
             assert normalized[col].mean() == pytest.approx(0.0, abs=0.1)
@@ -119,10 +123,12 @@ class TestNormalization:
 class TestImputation:
     def test_no_nans_after_imputation(self):
         """Imputed DataFrame should have no NaN values."""
-        df = pd.DataFrame({
-            "feat_a": [1.0, np.nan, 3.0, 4.0, np.nan],
-            "feat_b": [np.nan, 2.0, np.nan, 4.0, 5.0],
-        })
+        df = pd.DataFrame(
+            {
+                "feat_a": [1.0, np.nan, 3.0, 4.0, np.nan],
+                "feat_b": [np.nan, 2.0, np.nan, 4.0, 5.0],
+            }
+        )
         imputed = impute_missing(df)
         assert not imputed.isna().any().any()
 

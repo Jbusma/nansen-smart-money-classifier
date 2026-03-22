@@ -60,12 +60,14 @@ if page == "Cluster Explorer":
             labels = joblib.load(artifacts_path / "labels.joblib")
             addresses = joblib.load(artifacts_path / "addresses.joblib")
 
-            df_viz = pd.DataFrame({
-                "UMAP_1": embedding[:, 0],
-                "UMAP_2": embedding[:, 1],
-                "Cluster": labels.astype(str),
-                "Address": addresses,
-            })
+            df_viz = pd.DataFrame(
+                {
+                    "UMAP_1": embedding[:, 0],
+                    "UMAP_2": embedding[:, 1],
+                    "Cluster": labels.astype(str),
+                    "Address": addresses,
+                }
+            )
 
             # Noise points labeled as -1
             df_viz["Cluster"] = df_viz["Cluster"].replace("-1", "Noise")

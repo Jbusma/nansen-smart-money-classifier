@@ -128,11 +128,7 @@ def run_training(
 
     # Derive label names
     if "label_name" in labels_df.columns:
-        label_id_to_name = (
-            labels_df[["label", "label_name"]]
-            .drop_duplicates()
-            .sort_values("label")
-        )
+        label_id_to_name = labels_df[["label", "label_name"]].drop_duplicates().sort_values("label")
         label_names = label_id_to_name["label_name"].tolist()
     else:
         label_names = DEFAULT_LABEL_NAMES[: int(y.max()) + 1]
@@ -142,10 +138,18 @@ def run_training(
 
     # ---- 2. Stratified split: 70 / 15 / 15 ----
     x_train, x_temp, y_train, y_temp = train_test_split(
-        x, y, test_size=0.30, stratify=y, random_state=settings.random_seed,
+        x,
+        y,
+        test_size=0.30,
+        stratify=y,
+        random_state=settings.random_seed,
     )
     x_val, x_test, y_val, y_test = train_test_split(
-        x_temp, y_temp, test_size=0.50, stratify=y_temp, random_state=settings.random_seed,
+        x_temp,
+        y_temp,
+        test_size=0.50,
+        stratify=y_temp,
+        random_state=settings.random_seed,
     )
     logger.info(
         "data_split",
@@ -159,8 +163,13 @@ def run_training(
     if run_cv:
         logger.info("starting_cross_validation")
         cv_results = cross_validate(
-            WalletClassifier, x, y, label_names,
-            n_folds=5, num_classes=num_classes, device=device,
+            WalletClassifier,
+            x,
+            y,
+            label_names,
+            n_folds=5,
+            num_classes=num_classes,
+            device=device,
         )
         logger.info("cross_validation_done", mean_f1=cv_results["mean_f1"])
 
@@ -198,8 +207,10 @@ def run_training(
     try:
         shap_values = compute_shap_values(clf, x_test[:500], feature_cols)
         import shap as shap_lib
+
         shap_lib.summary_plot(shap_values, show=False)
         import matplotlib.pyplot as plt
+
         plt.savefig(Path(output_dir) / "shap_summary.png", dpi=150, bbox_inches="tight")
         plt.close()
     except Exception:
@@ -237,19 +248,23 @@ def _log_to_wandb(results: dict, output_dir: str, feature_names: list[str]) -> N
             reinit=True,
         )
 
-        wandb.log({
-            "macro_f1": results["macro_f1"],
-            "meets_target": int(results["meets_target"]),
-            "mean_confidence": results.get("mean_confidence"),
-        })
+        wandb.log(
+            {
+                "macro_f1": results["macro_f1"],
+                "meets_target": int(results["meets_target"]),
+                "mean_confidence": results.get("mean_confidence"),
+            }
+        )
 
         # Per-class metrics
         for name, metrics in results.get("per_class", {}).items():
-            wandb.log({
-                f"{name}/precision": metrics["precision"],
-                f"{name}/recall": metrics["recall"],
-                f"{name}/f1": metrics["f1"],
-            })
+            wandb.log(
+                {
+                    f"{name}/precision": metrics["precision"],
+                    f"{name}/recall": metrics["recall"],
+                    f"{name}/f1": metrics["f1"],
+                }
+            )
 
         # Upload artefacts
         artefact_dir = Path(output_dir)

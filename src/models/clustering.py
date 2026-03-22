@@ -188,9 +188,7 @@ class ClusteringPipeline:
 
         return stats
 
-    def get_cluster_exemplars(
-        self, features_df: pd.DataFrame, n: int = 20
-    ) -> dict[int, pd.DataFrame]:
+    def get_cluster_exemplars(self, features_df: pd.DataFrame, n: int = 20) -> dict[int, pd.DataFrame]:
         """Return the *n* most representative wallets per cluster.
 
         Exemplars are those closest to the cluster centroid in UMAP space.
@@ -418,9 +416,7 @@ class ClusteringPipeline:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _top_features_for_mask(
-        self, mask: np.ndarray, n: int = 5
-    ) -> list[dict[str, float]]:
+    def _top_features_for_mask(self, mask: np.ndarray, n: int = 5) -> list[dict[str, float]]:
         """Identify the features whose mean is highest for the given cluster.
 
         This is a simple heuristic: features are ranked by the ratio of
@@ -451,9 +447,7 @@ if __name__ == "__main__":
         ],
     )
 
-    parser = argparse.ArgumentParser(
-        description="Run the wallet clustering pipeline."
-    )
+    parser = argparse.ArgumentParser(description="Run the wallet clustering pipeline.")
     parser.add_argument(
         "--features",
         type=str,
@@ -494,9 +488,7 @@ if __name__ == "__main__":
     log.info("cluster_stats", n_clusters=len(stats))
 
     # 5. Stability analysis
-    stability = pipeline.stability_analysis(
-        features_df, n_runs=args.stability_runs
-    )
+    stability = pipeline.stability_analysis(features_df, n_runs=args.stability_runs)
     log.info(
         "stability_summary",
         mean_silhouette=stability["mean_silhouette"],
@@ -511,12 +503,8 @@ if __name__ == "__main__":
     # 7. Print summary
     summary = {
         "metrics": metrics,
-        "stability": {
-            k: v for k, v in stability.items() if k != "runs"
-        },
-        "cluster_sizes": {
-            k: v["size"] for k, v in stats.items()
-        },
+        "stability": {k: v for k, v in stability.items() if k != "runs"},
+        "cluster_sizes": {k: v["size"] for k, v in stats.items()},
         "expected_clusters": EXPECTED_CLUSTERS,
         "artifact": str(artifact_path),
     }

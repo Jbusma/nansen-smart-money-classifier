@@ -14,6 +14,7 @@ from scipy import stats
 # Individual feature functions
 # ---------------------------------------------------------------------------
 
+
 def tx_frequency_per_day(txs: pd.DataFrame) -> float:
     if txs.empty:
         return 0.0
@@ -122,18 +123,32 @@ def counterparty_concentration(txs: pd.DataFrame) -> float:
     if col is None:
         return 0.0
     shares = txs[col].value_counts(normalize=True)
-    hhi = float((shares ** 2).sum())
+    hhi = float((shares**2).sum())
     return hhi
 
 
 def value_velocity(txs: pd.DataFrame) -> float:
+    """Turnover rate: total outbound volume / max running balance.
+
+    Measures how quickly value flows through a wallet relative to what it
+    holds.  A high velocity means the wallet moves funds rapidly rather
+    than accumulating.  Falls back to 0 when balance data is unavailable.
+    """
     if txs.empty or "value" not in txs.columns:
         return 0.0
-    total_volume = txs["value"].astype(float).sum()
-    avg_balance = txs["value"].astype(float).mean()
-    if avg_balance == 0:
+    values = txs["value"].astype(float)
+    # Estimate a running balance from cumulative in minus out
+    if "direction" in txs.columns:
+        signs = txs["direction"].map({"in": 1, "out": -1}).fillna(0)
+        running = (values * signs).cumsum()
+        peak_balance = running.abs().max()
+    else:
+        # Fallback: use cumulative received as a balance proxy
+        peak_balance = values.cumsum().max()
+    if peak_balance == 0:
         return 0.0
-    return float(total_volume / avg_balance)
+    total_outbound = values.sum()
+    return float(total_outbound / peak_balance)
 
 
 def burst_score(txs: pd.DataFrame) -> float:
@@ -152,6 +167,7 @@ def burst_score(txs: pd.DataFrame) -> float:
 # ---------------------------------------------------------------------------
 # Aggregation
 # ---------------------------------------------------------------------------
+
 
 def compute_all_features(
     wallet_txs_df: pd.DataFrame,
@@ -183,9 +199,7 @@ def compute_all_features(
     for addr in wallets:
         txs = wallet_txs_df[wallet_txs_df["wallet_address"] == addr]
         tt = token_transfers_df[token_transfers_df["wallet_address"] == addr]
-        ci = contract_interactions_df[
-            contract_interactions_df["wallet_address"] == addr
-        ]
+        ci = contract_interactions_df[contract_interactions_df["wallet_address"] == addr]
 
         records.append(
             {

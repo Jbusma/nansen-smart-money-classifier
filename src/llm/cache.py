@@ -41,9 +41,7 @@ class NarrativeCache:
 
     def _ensure_table(self) -> None:
         """Create the cache table if it does not already exist."""
-        self._client.command(
-            _CACHE_TABLE_DDL.format(database=self._database)
-        )
+        self._client.command(_CACHE_TABLE_DDL.format(database=self._database))
         logger.debug("narrative_cache table ensured", database=self._database)
 
     # ------------------------------------------------------------------
@@ -98,21 +96,15 @@ class NarrativeCache:
         """
         if wallet_address is not None:
             self._client.command(
-                f"ALTER TABLE {self._database}.narrative_cache "
-                f"DELETE WHERE wallet_address = %(addr)s",
+                f"ALTER TABLE {self._database}.narrative_cache DELETE WHERE wallet_address = %(addr)s",
                 parameters={"addr": wallet_address},
             )
             logger.info("cache_invalidated", wallet_address=wallet_address)
         else:
-            self._client.command(
-                f"TRUNCATE TABLE {self._database}.narrative_cache"
-            )
+            self._client.command(f"TRUNCATE TABLE {self._database}.narrative_cache")
             logger.info("cache_invalidated_all")
 
     def cleanup_expired(self) -> None:
         """Delete rows whose TTL has passed (supplement to ClickHouse TTL)."""
-        self._client.command(
-            f"ALTER TABLE {self._database}.narrative_cache "
-            "DELETE WHERE expires_at <= now()"
-        )
+        self._client.command(f"ALTER TABLE {self._database}.narrative_cache DELETE WHERE expires_at <= now()")
         logger.info("cache_cleanup_expired")

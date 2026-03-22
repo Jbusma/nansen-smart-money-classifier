@@ -59,9 +59,7 @@ class InsightGenerator:
             try:
                 self._cache = NarrativeCache()
             except Exception:
-                logger.warning(
-                    "narrative_cache_unavailable, proceeding without cache"
-                )
+                logger.warning("narrative_cache_unavailable, proceeding without cache")
                 self._cache_enabled = False
 
     # ------------------------------------------------------------------
@@ -69,9 +67,7 @@ class InsightGenerator:
     # ------------------------------------------------------------------
 
     @retry(
-        retry=retry_if_exception_type(
-            (anthropic.RateLimitError, anthropic.APIConnectionError)
-        ),
+        retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APIConnectionError)),
         wait=wait_exponential(multiplier=1, min=2, max=30),
         stop=stop_after_attempt(4),
         reraise=True,
@@ -133,9 +129,7 @@ class InsightGenerator:
         prompt = CLUSTER_PROFILE_PROMPT.format(
             cluster_id=cluster_id,
             cluster_stats=json.dumps(cluster_stats, indent=2, default=str),
-            exemplar_wallets="\n".join(
-                f"  - {w}" for w in exemplar_wallets
-            ),
+            exemplar_wallets="\n".join(f"  - {w}" for w in exemplar_wallets),
         )
         profile = self._call_claude(prompt, max_tokens=768)
         logger.info("cluster_profile_generated", cluster_id=cluster_id)

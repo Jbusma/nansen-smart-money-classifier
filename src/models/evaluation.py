@@ -61,7 +61,10 @@ def evaluate_model(
 
     macro_f1 = f1_score(y_test, y_pred, average="macro")
     precision, recall, f1, support = precision_recall_fscore_support(
-        y_test, y_pred, average=None, zero_division=0,
+        y_test,
+        y_pred,
+        average=None,
+        zero_division=0,
     )
 
     per_class: dict[str, dict[str, float]] = {}
@@ -75,7 +78,10 @@ def evaluate_model(
 
     cm = confusion_matrix(y_test, y_pred).tolist()
     report_text = classification_report(
-        y_test, y_pred, target_names=label_names, zero_division=0,
+        y_test,
+        y_pred,
+        target_names=label_names,
+        zero_division=0,
     )
 
     results = {
@@ -208,8 +214,11 @@ def plot_confusion_matrix(
     for i in range(n_classes):
         for j in range(n_classes):
             ax.text(
-                j, i, format(cm[i, j], "d"),
-                ha="center", va="center",
+                j,
+                i,
+                format(cm[i, j], "d"),
+                ha="center",
+                va="center",
                 color="white" if cm[i, j] > thresh else "black",
             )
 
@@ -235,7 +244,10 @@ def plot_calibration_curve(
             continue  # skip classes with too few positive samples
 
         fraction_pos, mean_predicted = calibration_curve(
-            binary_true, prob_cls, n_bins=10, strategy="uniform",
+            binary_true,
+            prob_cls,
+            n_bins=10,
+            strategy="uniform",
         )
         ax.plot(mean_predicted, fraction_pos, marker="o", label=label_names[cls_idx])
 
@@ -266,10 +278,7 @@ def generate_evaluation_report(results: dict[str, Any], output_dir: str) -> None
     out.mkdir(parents=True, exist_ok=True)
 
     # ---- Serializable metrics ----
-    serializable = {
-        k: v for k, v in results.items()
-        if k not in {"y_prob", "y_pred"}
-    }
+    serializable = {k: v for k, v in results.items() if k not in {"y_prob", "y_pred"}}
     with open(out / "metrics.json", "w") as f:
         json.dump(serializable, f, indent=2, default=str)
 
