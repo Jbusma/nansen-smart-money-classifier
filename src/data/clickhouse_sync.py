@@ -138,10 +138,7 @@ def sync_features(df: pd.DataFrame) -> None:
     # Delete existing rows for the wallets we are about to upsert so that
     # we don't accumulate duplicates in MergeTree.
     placeholders = ", ".join(f"'{w}'" for w in wallet_addresses)
-    client.command(
-        f"ALTER TABLE {db}.wallet_features DELETE "
-        f"WHERE wallet_address IN ({placeholders})"
-    )
+    client.command(f"ALTER TABLE {db}.wallet_features DELETE WHERE wallet_address IN ({placeholders})")
     logger.info(
         "deleted_stale_rows",
         table="wallet_features",
@@ -173,8 +170,7 @@ def get_wallet_features(wallet_address: str) -> dict:
     db = settings.clickhouse_database
 
     result = client.query(
-        f"SELECT * FROM {db}.wallet_features "
-        f"WHERE wallet_address = {{addr:String}}",
+        f"SELECT * FROM {db}.wallet_features WHERE wallet_address = {{addr:String}}",
         parameters={"addr": wallet_address},
     )
 
@@ -200,8 +196,7 @@ def get_batch_features(wallet_addresses: list[str]) -> pd.DataFrame:
     db = settings.clickhouse_database
 
     result = client.query(
-        f"SELECT * FROM {db}.wallet_features "
-        f"WHERE wallet_address IN {{addrs:Array(String)}}",
+        f"SELECT * FROM {db}.wallet_features WHERE wallet_address IN {{addrs:Array(String)}}",
         parameters={"addrs": wallet_addresses},
     )
 
@@ -223,8 +218,7 @@ def health_check() -> bool:
         client = get_client()
         db = settings.clickhouse_database
         result = client.query(
-            "SELECT count() FROM system.tables "
-            "WHERE database = {db:String} AND name = 'wallet_features'",
+            "SELECT count() FROM system.tables WHERE database = {db:String} AND name = 'wallet_features'",
             parameters={"db": db},
         )
         table_exists = bool(result.result_rows[0][0] > 0)
