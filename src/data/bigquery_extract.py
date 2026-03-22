@@ -101,6 +101,25 @@ def _run_query(
     return df
 
 
+def _normalize_schema(schema: pa.Schema) -> pa.Schema:
+    """Coerce all numeric fields to float64 for cross-chunk consistency.
+
+    BigQuery can return different precision decimals and int/float
+    mismatches across chunks. Normalizing upfront prevents schema
+    conflicts when writing to a single Parquet file.
+    """
+    new_fields = []
+    for field in schema:
+        is_numeric = (
+            pa.types.is_decimal(field.type) or pa.types.is_integer(field.type) or pa.types.is_floating(field.type)
+        )
+        if is_numeric:
+            new_fields.append(field.with_type(pa.float64()))
+        else:
+            new_fields.append(field)
+    return pa.schema(new_fields, metadata=schema.metadata)
+
+
 def _stream_to_parquet(
     client: bigquery.Client,
     sql: str,
@@ -108,9 +127,10 @@ def _stream_to_parquet(
     *,
     description: str = "",
 ) -> int:
-    """Execute *sql* and stream results to a Parquet file in chunks.
+    """Execute *sql* and stream results to a Parquet file via Storage API.
 
-    Uses ``to_dataframe_iterable()`` so only one chunk (~10-50 MB) is in
+    Uses the BigQuery Storage API for parallel gRPC reads, then streams
+    chunks to disk via PyArrow's ParquetWriter. Only one chunk is in
     memory at a time. Returns the total number of rows written.
     """
     log = logger.bind(description=description)
@@ -118,16 +138,24 @@ def _stream_to_parquet(
 
     try:
         query_job = client.query(sql)
-        row_iter = query_job.result()
+        query_job.result()  # wait for query to complete
+
+        # Use the Storage API for fast parallel reads from the temp table
+        destination = query_job.destination
+        table_ref = f"{destination.project}.{destination.dataset_id}.{destination.table_id}"
+        row_iter = client.list_rows(table_ref)
     except Exception:
         log.exception("bigquery.stream.query_failed")
         raise
 
     total_rows = 0
     writer: pq.ParquetWriter | None = None
+    target_schema: pa.Schema | None = None
 
     try:
-        for chunk_df in row_iter.to_dataframe_iterable():
+        for chunk_df in row_iter.to_dataframe_iterable(
+            bqstorage_client=client._ensure_bqstorage_client(),
+        ):
             chunk_rows = len(chunk_df)
             if chunk_rows == 0:
                 continue
@@ -135,11 +163,18 @@ def _stream_to_parquet(
             table = pa.Table.from_pandas(chunk_df, preserve_index=False)
 
             if writer is None:
-                writer = pq.ParquetWriter(str(output_path), table.schema)
+                target_schema = _normalize_schema(table.schema)
+                writer = pq.ParquetWriter(str(output_path), target_schema)
+
+            table = table.cast(target_schema)
 
             writer.write_table(table)
             total_rows += chunk_rows
-            print(f"\r      -> {total_rows:,} rows streamed...", end="", flush=True)
+            print(
+                f"\r      -> {total_rows:,} rows streamed...",
+                end="",
+                flush=True,
+            )
     finally:
         if writer is not None:
             writer.close()
