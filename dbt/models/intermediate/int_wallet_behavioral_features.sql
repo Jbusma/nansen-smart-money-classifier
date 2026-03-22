@@ -91,21 +91,21 @@ counterparty_hhi as (
   group by wallet_address
 ),
 
--- Burst score: max daily tx count / avg daily tx count
-daily_tx_counts as (
+-- Burst score: max hourly tx count / avg hourly tx count
+hourly_tx_counts as (
   select
     wallet_address,
-    date(block_timestamp) as tx_date,
-    count(*) as daily_count
+    timestamp_trunc(block_timestamp, hour) as tx_hour,
+    count(*) as hourly_count
   from tx_timestamps
-  group by wallet_address, tx_date
+  group by wallet_address, tx_hour
 ),
 
 burst_stats as (
   select
     wallet_address,
-    max(daily_count) / nullif(avg(daily_count), 0) as burst_score
-  from daily_tx_counts
+    max(hourly_count) / nullif(avg(hourly_count), 0) as burst_score
+  from hourly_tx_counts
   group by wallet_address
 ),
 
