@@ -66,7 +66,7 @@ class NarrativeCache:
         )
         if result.result_rows:
             logger.debug("cache_hit", wallet_address=wallet_address)
-            return result.result_rows[0][0]
+            return str(result.result_rows[0][0])
         logger.debug("cache_miss", wallet_address=wallet_address)
         return None
 

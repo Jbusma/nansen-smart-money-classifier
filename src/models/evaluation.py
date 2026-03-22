@@ -195,7 +195,7 @@ def plot_confusion_matrix(
     n_classes = len(label_names)
 
     fig, ax = plt.subplots(figsize=(max(8, n_classes), max(6, n_classes * 0.8)))
-    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
     ax.figure.colorbar(im, ax=ax)
 
     ax.set(

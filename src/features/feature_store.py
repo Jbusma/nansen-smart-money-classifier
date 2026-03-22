@@ -89,6 +89,14 @@ class FeatureStore:
             return pd.DataFrame(columns=["wallet_address"] + _FEATURE_COLUMNS)
         return pd.DataFrame(result.result_rows, columns=result.column_names)
 
+    def get_all_features(self) -> pd.DataFrame:
+        """Return the full feature table as a DataFrame."""
+        query = f"SELECT * FROM {self._database}.{_FEATURE_TABLE}"
+        result = self._client.query(query)
+        if not result.result_rows:
+            return pd.DataFrame(columns=["wallet_address"] + _FEATURE_COLUMNS)
+        return pd.DataFrame(result.result_rows, columns=result.column_names)
+
     # ------------------------------------------------------------------
     # Write
     # ------------------------------------------------------------------
@@ -156,3 +164,14 @@ class FeatureStore:
                 "std": float(row[col_names.index(f"{feat}_std")]),
             }
         return stats
+
+    def health_check(self) -> bool:
+        """Return True if ClickHouse is reachable and the feature table exists."""
+        try:
+            result = self._client.query(
+                "SELECT count() FROM system.tables WHERE database = %(db)s AND name = %(tbl)s",
+                parameters={"db": self._database, "tbl": _FEATURE_TABLE},
+            )
+            return bool(result.result_rows and result.result_rows[0][0] > 0)
+        except Exception:
+            return False

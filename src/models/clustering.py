@@ -147,7 +147,7 @@ class ClusteringPipeline:
         embedding = self.reducer.transform(features_df.values)
         labels, _ = hdbscan.approximate_predict(self.clusterer, embedding)
         logger.info("clustering_pipeline.predict", n_samples=len(labels))
-        return labels
+        return np.asarray(labels)
 
     # ------------------------------------------------------------------
     # Evaluation helpers

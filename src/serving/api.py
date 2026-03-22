@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import time
 from contextlib import asynccontextmanager, suppress
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +29,7 @@ _insight_generator = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Load models and feature store on startup."""
     global _classifier, _clustering, _feature_store, _insight_generator
 
@@ -149,7 +153,7 @@ def _features_to_array(features: dict[str, float]) -> np.ndarray:
 # Endpoints
 # ---------------------------------------------------------------------------
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health() -> HealthResponse:
     fs_ok = False
     if _feature_store is not None:
         with suppress(Exception):
@@ -162,7 +166,7 @@ async def health():
 
 
 @app.post("/classify", response_model=ClassifyResponse)
-async def classify_wallet(req: ClassifyRequest):
+async def classify_wallet(req: ClassifyRequest) -> ClassifyResponse:
     if _classifier is None:
         raise HTTPException(503, "Classifier not loaded")
 
@@ -186,7 +190,7 @@ async def classify_wallet(req: ClassifyRequest):
 
 
 @app.post("/explain", response_model=ExplainResponse)
-async def explain_wallet(req: ClassifyRequest):
+async def explain_wallet(req: ClassifyRequest) -> ExplainResponse:
     if _classifier is None or _insight_generator is None:
         raise HTTPException(503, "Models not loaded")
 
@@ -213,7 +217,7 @@ async def explain_wallet(req: ClassifyRequest):
 
 
 @app.post("/similar", response_model=SimilarWalletsResponse)
-async def find_similar_wallets(req: SimilarWalletsRequest):
+async def find_similar_wallets(req: SimilarWalletsRequest) -> SimilarWalletsResponse:
     if _classifier is None or _feature_store is None:
         raise HTTPException(503, "Models not loaded")
 
@@ -261,7 +265,7 @@ async def find_similar_wallets(req: SimilarWalletsRequest):
 
 
 @app.get("/cluster/{cluster_id}", response_model=ClusterProfileResponse)
-async def get_cluster_profile(cluster_id: int):
+async def get_cluster_profile(cluster_id: int) -> ClusterProfileResponse:
     if _clustering is None or _insight_generator is None:
         raise HTTPException(503, "Models not loaded")
 

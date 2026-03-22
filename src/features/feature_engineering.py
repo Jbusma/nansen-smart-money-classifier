@@ -22,7 +22,7 @@ def tx_frequency_per_day(txs: pd.DataFrame) -> float:
     span = (dates.max() - dates.min()).total_seconds() / 86_400
     if span == 0:
         return float(len(txs))
-    return len(txs) / span
+    return float(len(txs) / span)
 
 
 def activity_regularity(txs: pd.DataFrame) -> float:

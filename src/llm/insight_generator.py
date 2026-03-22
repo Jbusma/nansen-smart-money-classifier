@@ -80,7 +80,8 @@ class InsightGenerator:
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text
+        block = message.content[0]
+        return block.text if hasattr(block, "text") else str(block)
 
     # ------------------------------------------------------------------
     # Public generators

@@ -24,7 +24,7 @@ st.sidebar.title("Smart Money Classifier")
 page = st.sidebar.radio("Navigate", ["Cluster Explorer", "Wallet Lookup", "Feature Importance", "Model Performance"])
 
 
-def api_call(endpoint: str, method: str = "GET", json: dict | None = None) -> dict | None:
+def api_call(endpoint: str, method: str = "GET", json: dict | None = None) -> dict | None:  # type: ignore[type-arg]
     """Helper to call the FastAPI backend."""
     try:
         if method == "GET":
@@ -32,7 +32,8 @@ def api_call(endpoint: str, method: str = "GET", json: dict | None = None) -> di
         else:
             resp = requests.post(f"{API_URL}{endpoint}", json=json, timeout=30)
         resp.raise_for_status()
-        return resp.json()
+        result: dict = resp.json()  # type: ignore[assignment]
+        return result
     except requests.exceptions.ConnectionError:
         st.error("Cannot connect to API server. Run `make serve-api` first.")
         return None

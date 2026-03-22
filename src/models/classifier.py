@@ -53,7 +53,8 @@ class WalletMLP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        result: torch.Tensor = self.net(x)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +131,7 @@ class WalletClassifier:
                 verbose=False,
             )
             preds = model.predict(x_val)
-            return f1_score(y_val, preds, average="macro")
+            return float(f1_score(y_val, preds, average="macro"))
 
         sampler = optuna.samplers.TPESampler(seed=self._SEED)
         study = optuna.create_study(direction="maximize", sampler=sampler)
@@ -264,7 +265,7 @@ class WalletClassifier:
             w_norm = w / w.sum()
             combined = w_norm[0] * xgb_proba + w_norm[1] * mlp_proba
             preds = combined.argmax(axis=1)
-            return -f1_score(y_val, preds, average="macro")
+            return float(-f1_score(y_val, preds, average="macro"))
 
         result = minimize(
             neg_f1,
@@ -294,7 +295,8 @@ class WalletClassifier:
             return xgb_proba
         mlp_proba = self._mlp_predict_proba(x)
         w = self.ensemble_weights
-        return w[0] * xgb_proba + w[1] * mlp_proba
+        result: np.ndarray = w[0] * xgb_proba + w[1] * mlp_proba
+        return result
 
     def predict(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Return ``(predicted_labels, confidence_scores)``.
