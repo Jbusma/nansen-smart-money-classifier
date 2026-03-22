@@ -1,0 +1,61 @@
+services:
+  # ── Clickhouse feature store ──────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: nansen
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Python FastAPI backend ────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./models/artifacts:/app/models/artifacts:ro
+
+  # ── Streamlit dashboard ───────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      target: dashboard
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    volumes:
+      - ./models/artifacts:/app/models/artifacts:ro
+
+  # ── MCP server ────────────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: ./mcp_server
+      dockerfile: Dockerfile
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    stdin_open: true
+
+volumes:
+  clickhouse_data:

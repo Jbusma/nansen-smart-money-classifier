@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Environment
+.env
+.env.*
+!.env.example
+credentials*.json
+*-credentials.json
+service-account*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ML artifacts
+models/artifacts/
+*.pkl
+*.joblib
+*.pt
+*.pth
+wandb/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Node
+node_modules/
+mcp_server/dist/
+
+# Data
+data/
+*.csv
+*.parquet
+!tests/fixtures/*.csv
+!tests/fixtures/*.parquet
+
+# Notebooks
+.ipynb_checkpoints/

@@ -1,0 +1,41 @@
+name: Model Evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/models/**"
+      - "src/features/**"
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run model evaluation on test set
+        run: python -m src.models.evaluation --ci
+        env:
+          MODEL_ARTIFACTS_PATH: models/artifacts
+
+      - name: Check F1 regression
+        run: |
+          python -c "
+          import json, sys
+          with open('models/artifacts/evaluation_metrics.json') as f:
+              metrics = json.load(f)
+          baseline_f1 = 0.85
+          current_f1 = metrics.get('macro_f1', 0)
+          print(f'Current macro F1: {current_f1:.4f} (baseline: {baseline_f1:.4f})')
+          if current_f1 < baseline_f1 - 0.02:
+              print(f'FAIL: F1 dropped by {baseline_f1 - current_f1:.4f} (threshold: 0.02)')
+              sys.exit(1)
+          print('PASS: F1 within acceptable range')
+          "

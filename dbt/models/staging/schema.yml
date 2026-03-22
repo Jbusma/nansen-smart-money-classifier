@@ -1,0 +1,128 @@
+version: 2
+
+sources:
+  - name: crypto_ethereum
+    database: bigquery-public-data
+    schema: crypto_ethereum
+    tables:
+      - name: transactions
+        description: "Ethereum mainnet transactions"
+        columns:
+          - name: hash
+            tests:
+              - not_null
+              - unique
+          - name: block_timestamp
+            tests:
+              - not_null
+          - name: from_address
+            tests:
+              - not_null
+          - name: value
+            tests:
+              - not_null
+
+      - name: token_transfers
+        description: "ERC20 and ERC721 token transfer events"
+        columns:
+          - name: transaction_hash
+            tests:
+              - not_null
+          - name: token_address
+            tests:
+              - not_null
+
+      - name: traces
+        description: "Internal transactions and contract calls"
+        columns:
+          - name: transaction_hash
+            tests:
+              - not_null
+
+      - name: contracts
+        description: "Deployed smart contracts on Ethereum"
+        columns:
+          - name: address
+            tests:
+              - not_null
+              - unique
+
+models:
+  - name: stg_wallet_transactions
+    description: "One row per wallet with aggregated transaction statistics over the sample window"
+    columns:
+      - name: wallet_address
+        description: "Ethereum wallet address"
+        tests:
+          - not_null
+          - unique
+      - name: tx_count
+        description: "Total transaction count (sent + received)"
+        tests:
+          - not_null
+      - name: tx_count_sent
+        tests:
+          - not_null
+      - name: tx_count_received
+        tests:
+          - not_null
+      - name: total_value_sent_eth
+        tests:
+          - not_null
+      - name: total_value_received_eth
+        tests:
+          - not_null
+      - name: active_days
+        tests:
+          - not_null
+      - name: unique_counterparties
+        tests:
+          - not_null
+
+  - name: stg_wallet_token_activity
+    description: "Token-level behavior aggregated per wallet"
+    columns:
+      - name: wallet_address
+        description: "Ethereum wallet address"
+        tests:
+          - not_null
+          - unique
+      - name: unique_tokens_interacted
+        tests:
+          - not_null
+      - name: erc20_transfer_count
+        tests:
+          - not_null
+      - name: erc721_transfer_count
+        tests:
+          - not_null
+      - name: token_diversity_entropy
+        tests:
+          - not_null
+
+  - name: stg_wallet_contract_interactions
+    description: "Smart contract engagement metrics per wallet"
+    columns:
+      - name: wallet_address
+        description: "Ethereum wallet address"
+        tests:
+          - not_null
+          - unique
+      - name: unique_contracts_called
+        tests:
+          - not_null
+      - name: contract_call_count
+        tests:
+          - not_null
+      - name: dex_interaction_count
+        tests:
+          - not_null
+      - name: lending_interaction_count
+        tests:
+          - not_null
+      - name: bridge_interaction_count
+        tests:
+          - not_null
+      - name: nft_marketplace_interaction_count
+        tests:
+          - not_null

@@ -1,0 +1,29 @@
+name: 'nansen_wallet_features'
+version: '1.0.0'
+config-version: 2
+
+profile: 'nansen_wallet_features'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  sample_window_days: 90
+  min_tx_count: 10
+  min_eth_transacted: 1
+
+models:
+  nansen_wallet_features:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts

@@ -1,0 +1,75 @@
+steps:
+  # Build API image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "--target",
+        "api",
+        "-t",
+        "gcr.io/$PROJECT_ID/smart-money-api:$COMMIT_SHA",
+        "-t",
+        "gcr.io/$PROJECT_ID/smart-money-api:latest",
+        ".",
+      ]
+
+  # Build dashboard image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "--target",
+        "dashboard",
+        "-t",
+        "gcr.io/$PROJECT_ID/smart-money-dashboard:$COMMIT_SHA",
+        "-t",
+        "gcr.io/$PROJECT_ID/smart-money-dashboard:latest",
+        ".",
+      ]
+
+  # Push images
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/smart-money-api:$COMMIT_SHA"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/smart-money-dashboard:$COMMIT_SHA"]
+
+  # Deploy API to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "smart-money-api"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/smart-money-api:$COMMIT_SHA"
+      - "--region"
+      - "asia-southeast1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--memory"
+      - "2Gi"
+      - "--cpu"
+      - "2"
+
+  # Deploy dashboard to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "smart-money-dashboard"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/smart-money-dashboard:$COMMIT_SHA"
+      - "--region"
+      - "asia-southeast1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--memory"
+      - "1Gi"
+
+images:
+  - "gcr.io/$PROJECT_ID/smart-money-api:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/smart-money-dashboard:$COMMIT_SHA"
