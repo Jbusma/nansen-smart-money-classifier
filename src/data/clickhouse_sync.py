@@ -267,9 +267,15 @@ _COLUMN_COERCIONS: dict[str, dict[str, str]] = {
 
 def _coerce_chunk(table_name: str, df: pd.DataFrame) -> pd.DataFrame:
     """Apply type coercions needed for ClickHouse insert."""
+    # Convert boolean columns to int before numeric coercion (nullable
+    # booleans reject fillna(0) directly).
+    bool_cols = df.select_dtypes(include=["boolean", "bool"]).columns
+    for col in bool_cols:
+        df[col] = df[col].astype("object").fillna(0).astype("uint8")
+
     coercions = _COLUMN_COERCIONS.get(table_name, {})
     for col, dtype in coercions.items():
-        if col in df.columns:
+        if col in df.columns and df[col].dtype not in ("uint8", "int8"):
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(dtype)
     # Ensure string columns have no NaN (ClickHouse rejects them)
     str_cols = df.select_dtypes(include=["object"]).columns
