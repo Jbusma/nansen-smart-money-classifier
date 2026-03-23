@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from src.data.clickhouse_sync import WALLET_FEATURE_COLUMNS, WALLET_FEATURES_DDL
+from src.data.clickhouse_sync import (
+    RAW_PARQUET_MAP,
+    RAW_TABLES,
+    WALLET_FEATURE_COLUMNS,
+    WALLET_FEATURES_DDL,
+)
 from src.features.feature_engineering import FEATURE_COLUMNS
 
 
@@ -44,3 +49,19 @@ class TestSchemaCorrectness:
         ]
         for col in old_columns:
             assert col not in WALLET_FEATURE_COLUMNS, f"Old column still present: {col}"
+
+
+class TestRawTableSchemas:
+    def test_raw_tables_count(self) -> None:
+        assert len(RAW_TABLES) == 3
+
+    def test_parquet_map_matches_raw_tables(self) -> None:
+        assert set(RAW_PARQUET_MAP.keys()) == set(RAW_TABLES.keys())
+
+    def test_all_raw_ddl_use_mergetree(self) -> None:
+        for name, ddl in RAW_TABLES.items():
+            assert "MergeTree()" in ddl, f"{name} does not use MergeTree"
+
+    def test_all_raw_ddl_order_by_from_address(self) -> None:
+        for name, ddl in RAW_TABLES.items():
+            assert "ORDER BY (from_address" in ddl, f"{name} not ordered by from_address"

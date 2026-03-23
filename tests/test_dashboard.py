@@ -240,8 +240,8 @@ class TestClusterViz:
 class TestDashboardDataLoading:
     def test_load_cluster_labels_empty(self) -> None:
         """Returns empty dict when no labels file exists."""
-        with patch("src.serving.dashboard.LABELS_PATH", Path("/nonexistent/path.json")):
-            from src.serving.dashboard import load_cluster_labels
+        with patch("src.serving.streamlit_app.LABELS_PATH", Path("/nonexistent/path.json")):
+            from src.serving.streamlit_app import load_cluster_labels
 
             # Clear cache so it re-executes
             load_cluster_labels.clear()
@@ -249,11 +249,11 @@ class TestDashboardDataLoading:
             assert result == {}
 
     def test_save_and_load_cluster_labels(self) -> None:
-        from src.serving.dashboard import load_cluster_labels, save_cluster_labels
+        from src.serving.streamlit_app import load_cluster_labels, save_cluster_labels
 
         with tempfile.TemporaryDirectory() as tmpdir:
             labels_path = Path(tmpdir) / "cluster_labels.json"
-            with patch("src.serving.dashboard.LABELS_PATH", labels_path):
+            with patch("src.serving.streamlit_app.LABELS_PATH", labels_path):
                 test_labels = {"0": "Smart Money", "1": "MEV Bot", "2": "DeFi Farmer"}
                 save_cluster_labels(test_labels)
 
@@ -263,15 +263,15 @@ class TestDashboardDataLoading:
 
     def test_load_ground_truth_missing(self) -> None:
         """Returns None when no ground truth file exists."""
-        with patch("src.serving.dashboard.GROUND_TRUTH_PATH", Path("/nonexistent/gt.parquet")):
-            from src.serving.dashboard import load_ground_truth
+        with patch("src.serving.streamlit_app.GROUND_TRUTH_PATH", Path("/nonexistent/gt.parquet")):
+            from src.serving.streamlit_app import load_ground_truth
 
             load_ground_truth.clear()
             result = load_ground_truth()
             assert result is None
 
     def test_load_ground_truth_exists(self) -> None:
-        from src.serving.dashboard import load_ground_truth
+        from src.serving.streamlit_app import load_ground_truth
 
         gt_df = pd.DataFrame(
             {
@@ -281,7 +281,7 @@ class TestDashboardDataLoading:
         )
         with tempfile.NamedTemporaryFile(suffix=".parquet") as f:
             gt_df.to_parquet(f.name, index=False)
-            with patch("src.serving.dashboard.GROUND_TRUTH_PATH", Path(f.name)):
+            with patch("src.serving.streamlit_app.GROUND_TRUTH_PATH", Path(f.name)):
                 load_ground_truth.clear()
                 result = load_ground_truth()
                 assert result is not None

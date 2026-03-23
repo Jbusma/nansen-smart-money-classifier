@@ -1,14 +1,25 @@
-"""Sync feature data to ClickHouse for low-latency serving (<50ms queries).
+"""Sync feature and raw transaction data to ClickHouse.
 
-Handles the daily batch pipeline: BigQuery/parquet -> ClickHouse.
-Target table: wallet_features (MergeTree, ordered by wallet_address).
+Handles two pipelines:
+1. Feature sync: wallet_features table for low-latency serving (<50ms).
+2. Raw data sync: transactions, token_transfers, contract_interactions
+   tables for on-chain context enrichment queries.
+
+Usage:
+    python -m src.data.clickhouse_sync               # create tables + health check
+    python -m src.data.clickhouse_sync --sync-raw     # load raw parquets into CH
+    python -m src.data.clickhouse_sync --sync-features # load features.parquet
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import clickhouse_connect
 import pandas as pd
+import pyarrow.parquet as pq
 import structlog
+from tqdm import tqdm
 
 from src.config import settings
 
@@ -55,6 +66,72 @@ ORDER BY (wallet_address, created_at)
 TTL created_at + INTERVAL 24 HOUR
 """
 
+# ---------------------------------------------------------------------------
+# Raw data schema definitions
+# ---------------------------------------------------------------------------
+
+RAW_TRANSACTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS {database}.raw_transactions (
+    hash              String,
+    block_number      Int64,
+    block_timestamp   DateTime64(6, 'UTC'),
+    from_address      String,
+    to_address        String,
+    value_eth         Float64,
+    gas               Int64,
+    gas_price         Int64,
+    receipt_status    UInt8,
+    method_id         String
+)
+ENGINE = MergeTree()
+ORDER BY (from_address, block_timestamp)
+"""
+
+RAW_TOKEN_TRANSFERS_DDL = """
+CREATE TABLE IF NOT EXISTS {database}.raw_token_transfers (
+    transaction_hash  String,
+    block_timestamp   DateTime64(6, 'UTC'),
+    from_address      String,
+    to_address        String,
+    token_address     String,
+    raw_value         String,
+    is_erc20          UInt8,
+    is_erc721         UInt8
+)
+ENGINE = MergeTree()
+ORDER BY (from_address, block_timestamp)
+"""
+
+RAW_CONTRACT_INTERACTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS {database}.raw_contract_interactions (
+    transaction_hash  String,
+    block_timestamp   DateTime64(6, 'UTC'),
+    from_address      String,
+    to_address        String,
+    trace_type        String,
+    value_eth         Float64,
+    gas_used          Float64,
+    status            Float64,
+    method_id         String,
+    is_erc20          UInt8,
+    is_erc721         UInt8
+)
+ENGINE = MergeTree()
+ORDER BY (from_address, block_timestamp)
+"""
+
+RAW_TABLES = {
+    "raw_transactions": RAW_TRANSACTIONS_DDL,
+    "raw_token_transfers": RAW_TOKEN_TRANSFERS_DDL,
+    "raw_contract_interactions": RAW_CONTRACT_INTERACTIONS_DDL,
+}
+
+RAW_PARQUET_MAP: dict[str, str] = {
+    "raw_transactions": "data/raw/transactions.parquet",
+    "raw_token_transfers": "data/raw/token_transfers.parquet",
+    "raw_contract_interactions": "data/raw/contract_interactions.parquet",
+}
+
 # Columns expected in the wallet_features table (excluding updated_at which
 # has a DEFAULT).
 WALLET_FEATURE_COLUMNS = [
@@ -94,9 +171,15 @@ def get_client() -> clickhouse_connect.driver.Client:
 # ---------------------------------------------------------------------------
 
 
-def create_tables() -> None:
-    """Create the wallet_features and llm_narrative_cache tables if they
-    do not already exist."""
+def create_tables(*, include_raw: bool = True) -> None:
+    """Create all ClickHouse tables if they do not already exist.
+
+    Parameters
+    ----------
+    include_raw : bool
+        If True (default), also create the raw_transactions,
+        raw_token_transfers, and raw_contract_interactions tables.
+    """
     client = get_client()
     db = settings.clickhouse_database
 
@@ -108,6 +191,11 @@ def create_tables() -> None:
 
     client.command(LLM_NARRATIVE_CACHE_DDL.format(database=db))
     logger.info("ensured_table_exists", table="llm_narrative_cache", database=db)
+
+    if include_raw:
+        for table_name, ddl in RAW_TABLES.items():
+            client.command(ddl.format(database=db))
+            logger.info("ensured_table_exists", table=table_name, database=db)
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +242,120 @@ def sync_features(df: pd.DataFrame) -> None:
         table="wallet_features",
         rows=len(insert_df),
     )
+
+
+# ---------------------------------------------------------------------------
+# Raw data sync (parquet -> ClickHouse in chunks)
+# ---------------------------------------------------------------------------
+
+# Column type coercions applied before inserting into ClickHouse.
+_COLUMN_COERCIONS: dict[str, dict[str, str]] = {
+    "raw_transactions": {
+        "value_eth": "float64",
+        "receipt_status": "uint8",
+    },
+    "raw_token_transfers": {
+        "is_erc20": "uint8",
+        "is_erc721": "uint8",
+    },
+    "raw_contract_interactions": {
+        "is_erc20": "uint8",
+        "is_erc721": "uint8",
+    },
+}
+
+
+def _coerce_chunk(table_name: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Apply type coercions needed for ClickHouse insert."""
+    coercions = _COLUMN_COERCIONS.get(table_name, {})
+    for col, dtype in coercions.items():
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(dtype)
+    # Ensure string columns have no NaN (ClickHouse rejects them)
+    str_cols = df.select_dtypes(include=["object"]).columns
+    df[str_cols] = df[str_cols].fillna("")
+    return df
+
+
+def sync_raw_table(
+    table_name: str,
+    parquet_path: str | Path | None = None,
+    *,
+    batch_size: int = 100_000,
+    truncate_first: bool = True,
+) -> int:
+    """Load a raw parquet file into ClickHouse in chunks.
+
+    Parameters
+    ----------
+    table_name : str
+        One of ``raw_transactions``, ``raw_token_transfers``,
+        ``raw_contract_interactions``.
+    parquet_path : str or Path, optional
+        Override the default path from ``RAW_PARQUET_MAP``.
+    batch_size : int
+        Number of rows per INSERT batch.
+    truncate_first : bool
+        If True, TRUNCATE the target table before loading (full refresh).
+
+    Returns
+    -------
+    int
+        Total rows inserted.
+    """
+    if table_name not in RAW_TABLES:
+        raise ValueError(f"Unknown table: {table_name}. Must be one of {list(RAW_TABLES)}")
+
+    path = Path(parquet_path) if parquet_path else Path(RAW_PARQUET_MAP[table_name])
+    if not path.exists():
+        raise FileNotFoundError(f"Parquet file not found: {path}")
+
+    client = get_client()
+    db = settings.clickhouse_database
+    full_table = f"{db}.{table_name}"
+
+    if truncate_first:
+        client.command(f"TRUNCATE TABLE IF EXISTS {full_table}")
+        logger.info("truncated_table", table=table_name)
+
+    pf = pq.ParquetFile(path)
+    total_rows = pf.metadata.num_rows
+    expected_columns = [
+        col.split()[0]
+        for col in RAW_TABLES[table_name].split("(", 1)[1].rsplit(")", 1)[0].strip().split("\n")
+        if col.strip() and not col.strip().startswith("--")
+    ]
+
+    inserted = 0
+    with tqdm(total=total_rows, desc=f"Loading {table_name}", unit="rows") as pbar:
+        for batch in pf.iter_batches(batch_size=batch_size):
+            chunk = batch.to_pandas()
+            chunk = _coerce_chunk(table_name, chunk)
+
+            # Keep only columns that match the DDL
+            chunk = chunk[[c for c in expected_columns if c in chunk.columns]]
+
+            client.insert_df(full_table, chunk)
+            inserted += len(chunk)
+            pbar.update(len(chunk))
+
+    logger.info("sync_raw_complete", table=table_name, rows=inserted)
+    return inserted
+
+
+def sync_all_raw(*, batch_size: int = 100_000) -> dict[str, int]:
+    """Load all three raw parquet files into ClickHouse.
+
+    Returns a dict mapping table name -> rows inserted.
+    """
+    results: dict[str, int] = {}
+    for table_name in RAW_TABLES:
+        path = Path(RAW_PARQUET_MAP[table_name])
+        if not path.exists():
+            logger.warning("skipping_missing_parquet", table=table_name, path=str(path))
+            continue
+        results[table_name] = sync_raw_table(table_name, batch_size=batch_size)
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +436,28 @@ def health_check() -> bool:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    create_tables()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ClickHouse sync utilities.")
+    parser.add_argument("--sync-raw", action="store_true", help="Load raw parquets into ClickHouse.")
+    parser.add_argument("--sync-features", action="store_true", help="Load features.parquet into ClickHouse.")
+    parser.add_argument("--batch-size", type=int, default=100_000, help="Rows per INSERT batch.")
+    args = parser.parse_args()
+
+    create_tables(include_raw=args.sync_raw or not args.sync_features)
     healthy = health_check()
     logger.info("clickhouse_ready", healthy=healthy)
+
+    if args.sync_raw:
+        results = sync_all_raw(batch_size=args.batch_size)
+        for table, count in results.items():
+            logger.info("loaded", table=table, rows=count)
+
+    if args.sync_features:
+        features_path = Path("data/features.parquet")
+        if features_path.exists():
+            features_df = pd.read_parquet(features_path)
+            sync_features(features_df)
+            logger.info("synced_features", rows=len(features_df))
+        else:
+            logger.warning("features_parquet_not_found", path=str(features_path))

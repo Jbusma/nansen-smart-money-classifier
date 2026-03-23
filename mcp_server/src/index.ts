@@ -14,6 +14,7 @@ import {
   explainWallet,
   findSimilarWallets,
   getClusterProfile,
+  getWalletContext,
 } from "./client.js";
 
 const server = new McpServer({
@@ -218,6 +219,107 @@ server.tool(
           {
             type: "text" as const,
             text: `Error explaining wallet: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── Tool: get_wallet_context ─────────────────────────────────────────
+
+server.tool(
+  "get_wallet_context",
+  "Get rich on-chain context for a wallet: transaction summary, top contract interactions with protocol labels (Uniswap, Aave, etc.), token activity, and timing patterns. Use this to understand what a wallet actually does on-chain before generating insights.",
+  {
+    wallet_address: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .describe("Ethereum wallet address (0x...)"),
+  },
+  async ({ wallet_address }) => {
+    try {
+      const ctx = await getWalletContext(wallet_address);
+
+      const sections: string[] = [
+        `Wallet: ${ctx.wallet_address}`,
+        "",
+      ];
+
+      // Transaction summary
+      if (ctx.transaction_summary) {
+        const ts = ctx.transaction_summary;
+        sections.push(
+          "── Transaction Summary ──",
+          `  Total transactions: ${ts.total_transactions.toLocaleString()}`,
+          `  Total ETH volume: ${ts.total_eth_volume.toFixed(4)} ETH`,
+          `  Avg tx value: ${ts.avg_tx_value_eth.toFixed(4)} ETH`,
+          `  First seen: ${ts.first_seen ?? "N/A"}`,
+          `  Last seen: ${ts.last_seen ?? "N/A"}`,
+          ""
+        );
+      }
+
+      // Top contracts
+      if (ctx.top_contracts && ctx.top_contracts.length > 0) {
+        sections.push("── Top Contract Interactions ──");
+        for (const c of ctx.top_contracts) {
+          const label = c.protocol_label
+            ? `${c.protocol_label} [${c.category}]`
+            : `Unknown contract [${c.category}]`;
+          sections.push(
+            `  ${c.address.slice(0, 10)}... — ${label}`,
+            `    ${c.interaction_count} interactions, ${c.total_eth.toFixed(4)} ETH`
+          );
+        }
+        sections.push("");
+      }
+
+      // Token activity
+      if (ctx.token_activity) {
+        const ta = ctx.token_activity;
+        sections.push(
+          "── Token Activity ──",
+          `  Unique tokens: ${ta.unique_tokens}`
+        );
+        if (ta.top_tokens.length > 0) {
+          sections.push("  Top tokens:");
+          for (const t of ta.top_tokens.slice(0, 5)) {
+            const type = t.erc721_count > 0 ? "NFT" : "ERC-20";
+            sections.push(
+              `    ${t.token_address.slice(0, 10)}... — ${t.transfer_count} transfers (${type})`
+            );
+          }
+        }
+        sections.push("");
+      }
+
+      // Timing patterns
+      if (ctx.timing_patterns) {
+        const tp = ctx.timing_patterns;
+        sections.push(
+          "── Timing Patterns ──",
+          `  Most active hours (UTC): ${tp.most_active_hours.map((h) => `${h}:00`).join(", ")}`,
+          `  Weekday ratio: ${(tp.weekday_ratio * 100).toFixed(1)}%`,
+          ""
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: sections.join("\n"),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error fetching wallet context: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
         isError: true,

@@ -136,6 +136,48 @@ class ClusterProfileResponse(BaseModel):
     exemplar_wallets: list[str]
 
 
+class ContractInteraction(BaseModel):
+    address: str
+    protocol_label: str | None
+    category: str
+    interaction_count: int
+    total_eth: float
+
+
+class TokenSummary(BaseModel):
+    token_address: str
+    transfer_count: int
+    erc20_count: int
+    erc721_count: int
+
+
+class TransactionSummary(BaseModel):
+    total_transactions: int
+    total_eth_volume: float
+    avg_tx_value_eth: float
+    first_seen: str | None
+    last_seen: str | None
+
+
+class TokenActivity(BaseModel):
+    unique_tokens: int
+    top_tokens: list[TokenSummary]
+
+
+class TimingPatterns(BaseModel):
+    most_active_hours: list[int]
+    weekday_ratio: float
+    hourly_distribution: list[float]
+
+
+class WalletContextResponse(BaseModel):
+    wallet_address: str
+    transaction_summary: TransactionSummary | None
+    top_contracts: list[ContractInteraction] | None
+    token_activity: TokenActivity | None
+    timing_patterns: TimingPatterns | None
+
+
 class HealthResponse(BaseModel):
     status: str
     models_loaded: bool
@@ -300,6 +342,30 @@ async def get_cluster_profile(cluster_id: int) -> ClusterProfileResponse:
         profile=profile,
         top_features=cluster.get("top_features", {}),
         exemplar_wallets=cluster.get("exemplar_addresses", [])[:5],
+    )
+
+
+@app.get("/wallet/{address}/context", response_model=WalletContextResponse)
+async def wallet_context(address: str) -> WalletContextResponse:
+    """Return rich on-chain context for a wallet address.
+
+    Queries ClickHouse for transaction summaries, top contract interactions
+    (with protocol labels), token activity, and timing patterns.
+    """
+    from src.data.wallet_context import get_wallet_context
+
+    try:
+        ctx = get_wallet_context(address)
+    except Exception as exc:
+        logger.error("wallet_context_failed", wallet=address, error=str(exc))
+        raise HTTPException(503, f"Context query failed: {exc}") from exc
+
+    return WalletContextResponse(
+        wallet_address=ctx["wallet_address"],
+        transaction_summary=ctx.get("transaction_summary"),
+        top_contracts=ctx.get("top_contracts"),
+        token_activity=ctx.get("token_activity"),
+        timing_patterns=ctx.get("timing_patterns"),
     )
 
 

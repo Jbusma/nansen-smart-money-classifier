@@ -40,6 +40,42 @@ interface ClusterProfileResult {
   exemplar_wallets: string[];
 }
 
+interface ContractInteraction {
+  address: string;
+  protocol_label: string | null;
+  category: string;
+  interaction_count: number;
+  total_eth: number;
+}
+
+interface TokenSummary {
+  token_address: string;
+  transfer_count: number;
+  erc20_count: number;
+  erc721_count: number;
+}
+
+interface WalletContextResult {
+  wallet_address: string;
+  transaction_summary: {
+    total_transactions: number;
+    total_eth_volume: number;
+    avg_tx_value_eth: number;
+    first_seen: string | null;
+    last_seen: string | null;
+  } | null;
+  top_contracts: ContractInteraction[] | null;
+  token_activity: {
+    unique_tokens: number;
+    top_tokens: TokenSummary[];
+  } | null;
+  timing_patterns: {
+    most_active_hours: number[];
+    weekday_ratio: number;
+    hourly_distribution: number[];
+  } | null;
+}
+
 async function apiCall<T>(
   endpoint: string,
   method: "GET" | "POST" = "GET",
@@ -92,4 +128,12 @@ export async function getClusterProfile(
   clusterId: number
 ): Promise<ClusterProfileResult> {
   return apiCall<ClusterProfileResult>(`/cluster/${clusterId}`);
+}
+
+export async function getWalletContext(
+  walletAddress: string
+): Promise<WalletContextResult> {
+  return apiCall<WalletContextResult>(
+    `/wallet/${walletAddress}/context`
+  );
 }
