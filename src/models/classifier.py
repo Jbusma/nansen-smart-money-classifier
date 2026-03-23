@@ -77,7 +77,12 @@ class WalletClassifier:
 
     def __init__(self, num_classes: int = 7, device: str = "cpu") -> None:
         self.num_classes = num_classes
-        self.device = torch.device(device)
+        # Graceful fallback: try requested device, fall back to CPU
+        requested = device
+        if requested == "mps" and not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+            logger.warning("mps_not_available_falling_back_to_cpu")
+            requested = "cpu"
+        self.device = torch.device(requested)
         self.xgb_model: XGBClassifier | None = None
         self.mlp_model: WalletMLP | None = None
         self.input_dim: int | None = None
@@ -119,6 +124,7 @@ class WalletClassifier:
                 objective="multi:softprob",
                 num_class=self.num_classes,
                 tree_method="hist",
+                n_jobs=-1,
                 random_state=self._SEED,
                 eval_metric="mlogloss",
                 early_stopping_rounds=20,
@@ -150,6 +156,7 @@ class WalletClassifier:
             objective="multi:softprob",
             num_class=self.num_classes,
             tree_method="hist",
+            n_jobs=-1,
             random_state=self._SEED,
             eval_metric="mlogloss",
             early_stopping_rounds=20,

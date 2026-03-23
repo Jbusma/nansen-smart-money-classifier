@@ -64,6 +64,7 @@ class ClusteringPipeline:
             min_dist=min_dist,
             metric=metric,
             n_components=2,
+            n_jobs=-1,
             random_state=settings.random_seed,
         )
         self.clusterer = hdbscan.HDBSCAN(
@@ -476,20 +477,25 @@ if __name__ == "__main__":
     features_df = pd.read_parquet(args.features)
     log.info("features_loaded", shape=features_df.shape)
 
-    # 2. Fit pipeline
-    pipeline = ClusteringPipeline()
-    pipeline.fit(features_df)
+    # 2. Separate wallet addresses from features
+    wallet_addresses = features_df["wallet_address"] if "wallet_address" in features_df.columns else None
+    numeric_features = features_df.select_dtypes(include=[np.number])
+    log.info("numeric_features", columns=list(numeric_features.columns))
 
-    # 3. Evaluate
-    metrics = pipeline.evaluate(features_df)
+    # 3. Fit pipeline
+    pipeline = ClusteringPipeline()
+    pipeline.fit(numeric_features)
+
+    # 4. Evaluate
+    metrics = pipeline.evaluate(numeric_features)
     log.info("evaluation_metrics", **metrics)
 
-    # 4. Cluster statistics
+    # 5. Cluster statistics
     stats = pipeline.get_cluster_stats()
     log.info("cluster_stats", n_clusters=len(stats))
 
-    # 5. Stability analysis
-    stability = pipeline.stability_analysis(features_df, n_runs=args.stability_runs)
+    # 6. Stability analysis
+    stability = pipeline.stability_analysis(numeric_features, n_runs=args.stability_runs)
     log.info(
         "stability_summary",
         mean_silhouette=stability["mean_silhouette"],
@@ -497,11 +503,11 @@ if __name__ == "__main__":
         mean_n_clusters=stability["mean_n_clusters"],
     )
 
-    # 6. Save
+    # 7. Save
     artifact_path = pipeline.save(args.output)
     log.info("pipeline_saved", path=str(artifact_path))
 
-    # 7. Print summary
+    # 8. Print summary
     summary = {
         "metrics": metrics,
         "stability": {k: v for k, v in stability.items() if k != "runs"},

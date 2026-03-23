@@ -42,15 +42,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("loading_models", path=str(artifacts))
     try:
-        _classifier = WalletClassifier.load(artifacts / "classifier")
-        _clustering = ClusteringPipeline.load(artifacts / "clustering")
-        _feature_store = FeatureStore()
-        _insight_generator = InsightGenerator()
-        logger.info("models_loaded")
+        _classifier = WalletClassifier.load(artifacts)
+        logger.info("classifier_loaded")
     except Exception:
-        logger.exception("model_load_failed")
-        # Allow startup even if models aren't trained yet (for dev)
-        pass
+        logger.warning("classifier_load_failed", exc_info=True)
+
+    try:
+        _clustering = ClusteringPipeline.load()
+        logger.info("clustering_loaded")
+    except Exception:
+        logger.warning("clustering_load_failed", exc_info=True)
+
+    try:
+        _feature_store = FeatureStore()
+        logger.info("feature_store_initialized")
+    except Exception:
+        logger.warning("feature_store_init_failed", exc_info=True)
+
+    try:
+        _insight_generator = InsightGenerator()
+        logger.info("insight_generator_initialized")
+    except Exception:
+        logger.warning("insight_generator_init_failed", exc_info=True)
 
     yield
 

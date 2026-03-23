@@ -369,12 +369,39 @@ def preprocess_raw_data(
 # ---------------------------------------------------------------------------
 
 
+def _compute_wallet_features(
+    addr: str,
+    txs: pd.DataFrame,
+    tt: pd.DataFrame,
+    ci: pd.DataFrame,
+) -> dict:
+    """Compute all 12 features for a single wallet."""
+    return {
+        "wallet_address": addr,
+        "tx_frequency_per_day": tx_frequency_per_day(txs),
+        "activity_regularity": activity_regularity(txs),
+        "hour_of_day_entropy": hour_of_day_entropy(txs),
+        "weekend_vs_weekday_ratio": weekend_vs_weekday_ratio(txs),
+        "avg_holding_duration_estimate": avg_holding_duration_estimate(tt, addr),
+        "gas_price_sensitivity": gas_price_sensitivity(txs),
+        "is_contract": is_contract(txs),
+        "dex_to_total_ratio": dex_to_total_ratio(ci),
+        "lending_to_total_ratio": lending_to_total_ratio(ci),
+        "counterparty_concentration": counterparty_concentration(txs),
+        "value_velocity": value_velocity(txs, addr),
+        "burst_score": burst_score(txs),
+    }
+
+
 def compute_all_features(
     wallet_txs_df: pd.DataFrame,
     token_transfers_df: pd.DataFrame,
     contract_interactions_df: pd.DataFrame,
 ) -> pd.DataFrame:
     """Compute the full derived-feature vector for every wallet.
+
+    Pre-indexes DataFrames by wallet_address for O(1) lookups instead of
+    scanning the full DataFrame per wallet.
 
     Parameters
     ----------
@@ -394,31 +421,22 @@ def compute_all_features(
     pd.DataFrame
         One row per wallet with ``wallet_address`` + 12 feature columns.
     """
-    records: list[dict] = []
+    # Pre-group for O(1) per-wallet lookups (vs O(n) scan per wallet)
+    txs_groups = dict(list(wallet_txs_df.groupby("wallet_address")))
+    tt_groups = dict(list(token_transfers_df.groupby("wallet_address")))
+    ci_groups = dict(list(contract_interactions_df.groupby("wallet_address")))
 
+    empty_txs = wallet_txs_df.iloc[:0]
+    empty_tt = token_transfers_df.iloc[:0]
+    empty_ci = contract_interactions_df.iloc[:0]
+
+    records: list[dict] = []
     wallets = wallet_txs_df["wallet_address"].unique()
     for addr in tqdm(wallets, desc="Computing features", unit="wallet"):
-        txs = wallet_txs_df[wallet_txs_df["wallet_address"] == addr]
-        tt = token_transfers_df[token_transfers_df["wallet_address"] == addr]
-        ci = contract_interactions_df[contract_interactions_df["wallet_address"] == addr]
-
-        records.append(
-            {
-                "wallet_address": addr,
-                "tx_frequency_per_day": tx_frequency_per_day(txs),
-                "activity_regularity": activity_regularity(txs),
-                "hour_of_day_entropy": hour_of_day_entropy(txs),
-                "weekend_vs_weekday_ratio": weekend_vs_weekday_ratio(txs),
-                "avg_holding_duration_estimate": avg_holding_duration_estimate(tt, addr),
-                "gas_price_sensitivity": gas_price_sensitivity(txs),
-                "is_contract": is_contract(txs),
-                "dex_to_total_ratio": dex_to_total_ratio(ci),
-                "lending_to_total_ratio": lending_to_total_ratio(ci),
-                "counterparty_concentration": counterparty_concentration(txs),
-                "value_velocity": value_velocity(txs, addr),
-                "burst_score": burst_score(txs),
-            }
-        )
+        txs = txs_groups.get(addr, empty_txs)
+        tt = tt_groups.get(addr, empty_tt)
+        ci = ci_groups.get(addr, empty_ci)
+        records.append(_compute_wallet_features(addr, txs, tt, ci))
 
     return pd.DataFrame(records)
 
@@ -471,3 +489,87 @@ def impute_missing(df: pd.DataFrame) -> pd.DataFrame:
             fill = mode_vals.iloc[0] if not mode_vals.empty else "unknown"
             result[col] = result[col].fillna(fill)
     return result
+
+
+# ---------------------------------------------------------------------------
+# CLI entry-point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import argparse
+    import pathlib
+
+    parser = argparse.ArgumentParser(
+        description="Compute behavioral features from raw parquet extracts.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=pathlib.Path,
+        default=pathlib.Path("data/raw"),
+        help="Directory containing raw parquet files.",
+    )
+    parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        default=pathlib.Path("data/features.parquet"),
+        help="Output path for computed features.",
+    )
+    args = parser.parse_args()
+
+    data_dir = args.data_dir
+    output_path = args.output
+
+    print("[1/4] Loading active wallets...")
+    wallets_df = pd.read_parquet(data_dir / "active_wallets.parquet")
+    wallet_addresses = wallets_df["wallet_address"].str.lower().tolist()
+    print(f"       {len(wallet_addresses):,} wallets")
+
+    print("[2/4] Loading raw parquet files (streaming, minimal columns)...")
+
+    # Only load the columns each feature function actually needs
+    txs_cols = [
+        "block_timestamp",
+        "from_address",
+        "to_address",
+        "value_eth",
+        "gas_price",
+        "method_id",
+    ]
+    tt_cols = [
+        "block_timestamp",
+        "from_address",
+        "to_address",
+        "token_address",
+    ]
+    ci_cols = [
+        "from_address",
+        "to_address",
+    ]
+
+    import pyarrow.parquet as pq
+
+    print("       transactions...", end="", flush=True)
+    txs_raw = pq.read_table(data_dir / "transactions.parquet", columns=txs_cols).to_pandas()
+    print(f" {len(txs_raw):,} rows")
+
+    print("       token_transfers...", end="", flush=True)
+    tt_raw = pq.read_table(data_dir / "token_transfers.parquet", columns=tt_cols).to_pandas()
+    print(f" {len(tt_raw):,} rows")
+
+    print("       contract_interactions...", end="", flush=True)
+    ci_raw = pq.read_table(data_dir / "contract_interactions.parquet", columns=ci_cols).to_pandas()
+    print(f" {len(ci_raw):,} rows")
+
+    print("[3/4] Preprocessing and computing features...")
+    txs, tt, ci = preprocess_raw_data(wallet_addresses, txs_raw, tt_raw, ci_raw)
+
+    # Free raw data to reclaim memory before feature computation
+    del txs_raw, tt_raw, ci_raw
+
+    features_df = compute_all_features(txs, tt, ci)
+    features_df = impute_missing(features_df)
+
+    print(f"\n[4/4] Saving {len(features_df):,} wallet features to {output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    features_df.to_parquet(output_path, index=False)
+    print("       Done!")

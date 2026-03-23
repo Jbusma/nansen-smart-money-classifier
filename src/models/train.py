@@ -76,10 +76,26 @@ def load_labels(labels_path: str) -> pd.DataFrame:
 
     Expected columns: ``wallet_address``, ``label`` (integer-encoded) or
     ``label_name`` (string).
+
+    The ground-truth file from ``build_ground_truth_local`` uses ``address``
+    and string-valued ``label`` columns.  This function handles all variants:
+    - ``label_name`` (string) + missing ``label`` -> encode to int
+    - ``label`` (string) -> rename to ``label_name``, encode to int
+    - ``address`` instead of ``wallet_address`` -> rename
     """
     path = Path(labels_path)
     df = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
 
+    # Normalize address column name
+    if "wallet_address" not in df.columns and "address" in df.columns:
+        df["wallet_address"] = df["address"]
+
+    # Handle string-valued label column (from ground_truth_local)
+    if "label" in df.columns and df["label"].dtype == object:
+        df["label_name"] = df["label"]
+        df = df.drop(columns=["label"])
+
+    # Encode string labels to integers
     if "label" not in df.columns and "label_name" in df.columns:
         unique_names = sorted(df["label_name"].unique())
         name_to_id = {name: idx for idx, name in enumerate(unique_names)}
@@ -97,7 +113,7 @@ def load_labels(labels_path: str) -> pd.DataFrame:
 
 def run_training(
     features_path: str | None = None,
-    labels_path: str = "data/labels.csv",
+    labels_path: str = "data/ground_truth.parquet",
     output_dir: str | None = None,
     n_trials: int = 100,
     epochs: int = 100,
@@ -138,18 +154,37 @@ def run_training(
     logger.info("dataset_ready", n_samples=len(x), n_features=x.shape[1], num_classes=num_classes)
 
     # ---- 2. Stratified split: 70 / 15 / 15 ----
+    # Check minimum class sizes for stratified splitting.
+    # Stratified 3-way split needs at least ~7 samples per class.
+    from collections import Counter
+
+    class_counts = Counter(y.tolist())
+    min_class_count = min(class_counts.values())
+    logger.info("class_distribution", counts=dict(class_counts))
+
+    # Use stratification only if all classes have enough samples
+    stratify_y = y if min_class_count >= 7 else None
+    if stratify_y is None:
+        logger.warning(
+            "stratification_disabled",
+            min_class_count=min_class_count,
+            reason="too few samples in smallest class for stratified split",
+        )
+
     x_train, x_temp, y_train, y_temp = train_test_split(
         x,
         y,
         test_size=0.30,
-        stratify=y,
+        stratify=stratify_y,
         random_state=settings.random_seed,
     )
+
+    stratify_temp = y_temp if min_class_count >= 7 else None
     x_val, x_test, y_val, y_test = train_test_split(
         x_temp,
         y_temp,
         test_size=0.50,
-        stratify=y_temp,
+        stratify=stratify_temp,
         random_state=settings.random_seed,
     )
     logger.info(
@@ -297,7 +332,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--labels-path",
         type=str,
-        default="data/labels.csv",
+        default="data/ground_truth.parquet",
         help="Path to ground-truth labels (CSV or parquet).",
     )
     parser.add_argument(
@@ -326,9 +361,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device",
         type=str,
-        default="cpu",
+        default="mps",
         choices=["cpu", "cuda", "mps"],
-        help="PyTorch device.",
+        help="PyTorch device (default: mps for Apple Silicon GPU).",
     )
     return parser.parse_args()
 
