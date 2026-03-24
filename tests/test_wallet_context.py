@@ -371,9 +371,7 @@ class TestWalletContextEndpoint:
         assert data["wallet_address"] == "0x" + "ab" * 20
 
     @patch("src.data.wallet_context.get_wallet_context")
-    def test_endpoint_returns_503_on_failure(
-        self, mock_get_ctx: MagicMock, client: Any
-    ) -> None:
+    def test_endpoint_returns_503_on_failure(self, mock_get_ctx: MagicMock, client: Any) -> None:
         mock_get_ctx.side_effect = ConnectionError("down")
 
         resp = client.get("/wallet/0x" + "ab" * 20 + "/context")

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nansen-smart-money": {
+      "command": "docker",
+      "args": ["exec", "-i", "nansen-mcp-server-1", "node", "dist/index.js", "--stdio"]
+    }
+  }
+}
