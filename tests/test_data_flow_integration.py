@@ -307,10 +307,10 @@ class TestWalletContextFlow:
             [[100, 50.5, 0.505, "2023-01-01 00:00:00", "2024-01-01 00:00:00"]],
             ["total_transactions", "total_eth_volume", "avg_tx_value_eth", "first_seen", "last_seen"],
         )
-        # Top contracts query
+        # Top contracts query (JOIN with protocol_registry)
         top_contracts = _mock_query_result(
-            [["0x" + "cc" * 20, 50, 10.0]],
-            ["to_address", "interaction_count", "total_eth"],
+            [["0x" + "cc" * 20, 50, 10.0, None, None]],
+            ["to_address", "interaction_count", "total_eth", "protocol_label", "protocol_category"],
         )
         # Token unique count + top tokens
         token_count = _mock_query_result([[5]], ["unique_tokens"])
@@ -568,8 +568,8 @@ class TestCreateTablesIntegration:
 
         commands = [c[0][0] for c in mock_client.command.call_args_list]
         # Should have: CREATE DATABASE, wallet_features, ground_truth,
-        # llm_narrative_cache, + 3 raw tables = 7 total
-        assert len(commands) == 7
+        # protocol_registry, llm_narrative_cache, + 3 raw tables = 8 total
+        assert len(commands) == 8
         assert any("CREATE DATABASE" in c for c in commands)
         assert any("wallet_features" in c for c in commands)
         assert any("ground_truth" in c for c in commands)
@@ -587,6 +587,6 @@ class TestCreateTablesIntegration:
 
         commands = [c[0][0] for c in mock_client.command.call_args_list]
         # Should have: CREATE DATABASE, wallet_features, ground_truth,
-        # llm_narrative_cache = 4 total (no raw tables)
-        assert len(commands) == 4
+        # protocol_registry, llm_narrative_cache = 5 total (no raw tables)
+        assert len(commands) == 5
         assert not any("raw_transactions" in c for c in commands)

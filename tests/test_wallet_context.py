@@ -179,8 +179,8 @@ class TestGetTopContracts:
 
         mock_client = MagicMock()
         mock_client.query.return_value = _mock_query_result(
-            [[UNISWAP_V3_ROUTER, 150, 42.5]],
-            ["to_address", "interaction_count", "total_eth"],
+            [[UNISWAP_V3_ROUTER, 150, 42.5, "Uniswap V3: Router", "dex"]],
+            ["to_address", "interaction_count", "total_eth", "protocol_label", "protocol_category"],
         )
         mock_get_client.return_value = mock_client
 
@@ -197,8 +197,8 @@ class TestGetTopContracts:
         unknown_addr = "0x" + "ff" * 20
         mock_client = MagicMock()
         mock_client.query.return_value = _mock_query_result(
-            [[unknown_addr, 50, 10.0]],
-            ["to_address", "interaction_count", "total_eth"],
+            [[unknown_addr, 50, 10.0, None, None]],
+            ["to_address", "interaction_count", "total_eth", "protocol_label", "protocol_category"],
         )
         mock_get_client.return_value = mock_client
 
@@ -300,48 +300,6 @@ class TestGetWalletContext:
 
 
 # ---------------------------------------------------------------------------
-# Protocol categorization
-# ---------------------------------------------------------------------------
-
-
-class TestCategorizeProtocol:
-    def test_dex_router(self) -> None:
-        from src.data.ground_truth import UNISWAP_V2_ROUTER
-        from src.data.wallet_context import _categorize_protocol
-
-        assert _categorize_protocol(UNISWAP_V2_ROUTER) == "dex"
-
-    def test_lending_protocol(self) -> None:
-        from src.data.ground_truth import AAVE_V3_POOL
-        from src.data.wallet_context import _categorize_protocol
-
-        assert _categorize_protocol(AAVE_V3_POOL) == "lending"
-
-    def test_nft_marketplace(self) -> None:
-        from src.data.ground_truth import OPENSEA_SEAPORT
-        from src.data.wallet_context import _categorize_protocol
-
-        assert _categorize_protocol(OPENSEA_SEAPORT) == "nft_marketplace"
-
-    def test_bridge(self) -> None:
-        from src.data.ground_truth import ARBITRUM_DELAYED_INBOX
-        from src.data.wallet_context import _categorize_protocol
-
-        assert _categorize_protocol(ARBITRUM_DELAYED_INBOX) == "bridge"
-
-    def test_exchange(self) -> None:
-        from src.data.ground_truth import BINANCE_HOT_1
-        from src.data.wallet_context import _categorize_protocol
-
-        assert _categorize_protocol(BINANCE_HOT_1) == "exchange"
-
-    def test_unknown_address(self) -> None:
-        from src.data.wallet_context import _categorize_protocol
-
-        assert _categorize_protocol("0x" + "ff" * 20) == "unknown"
-
-
-# ---------------------------------------------------------------------------
 # FastAPI endpoint (mocked context function)
 # ---------------------------------------------------------------------------
 
@@ -355,20 +313,31 @@ class TestWalletContextEndpoint:
 
         return TestClient(app)
 
-    @patch("src.serving.api.logger")
-    @patch("src.data.wallet_context.get_client")
-    def test_endpoint_returns_200(self, mock_ch_client: MagicMock, mock_logger: MagicMock, client: Any) -> None:
-        mock_ch = MagicMock()
-        mock_ch.query.return_value = _mock_query_result(
-            [[0, 0.0, 0.0, None, None]],
-            ["total_transactions", "total_eth_volume", "avg_tx_value_eth", "first_seen", "last_seen"],
-        )
-        mock_ch_client.return_value = mock_ch
+    @patch("src.data.wallet_context.get_wallet_context")
+    def test_endpoint_returns_200(self, mock_get_ctx: MagicMock, client: Any) -> None:
+        addr = "0x" + "ab" * 20
+        mock_get_ctx.return_value = {
+            "wallet_address": addr,
+            "transaction_summary": {
+                "total_transactions": 0,
+                "total_eth_volume": 0.0,
+                "avg_tx_value_eth": 0.0,
+                "first_seen": None,
+                "last_seen": None,
+            },
+            "top_contracts": [],
+            "token_activity": {"unique_tokens": 0, "top_tokens": []},
+            "timing_patterns": {
+                "most_active_hours": [],
+                "weekday_ratio": 0.0,
+                "hourly_distribution": [0.0] * 24,
+            },
+        }
 
-        resp = client.get("/wallet/0x" + "ab" * 20 + "/context")
+        resp = client.get(f"/wallet/{addr}/context")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["wallet_address"] == "0x" + "ab" * 20
+        assert data["wallet_address"] == addr
 
     @patch("src.data.wallet_context.get_wallet_context")
     def test_endpoint_returns_503_on_failure(self, mock_get_ctx: MagicMock, client: Any) -> None:
