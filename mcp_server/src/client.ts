@@ -137,3 +137,56 @@ export async function getWalletContext(
     `/wallet/${walletAddress}/context`
   );
 }
+
+interface EnrichResult {
+  hardcoded: number;
+  token_list: number;
+  defillama: number;
+  etherscan: number;
+  total_registry_size: number;
+}
+
+export async function enrichRegistry(
+  etherscan: boolean = false,
+  topN: number = 500
+): Promise<EnrichResult> {
+  return apiCall<EnrichResult>("/enrich", "POST", {
+    etherscan,
+    top_n: topN,
+  });
+}
+
+interface LabelResult {
+  labeled: number;
+  label: string;
+}
+
+export async function labelWallet(
+  walletAddress: string,
+  label: string,
+  confidence: number,
+  evidence: string
+): Promise<LabelResult> {
+  return apiCall<LabelResult>("/label/wallet", "POST", {
+    wallet_address: walletAddress,
+    label,
+    confidence,
+    evidence,
+    source: "agent_verified",
+  });
+}
+
+export async function labelCluster(
+  clusterId: number,
+  label: string,
+  confidence: number,
+  evidence: string
+): Promise<LabelResult> {
+  return apiCall<LabelResult>("/label/cluster", "POST", {
+    cluster_id: clusterId,
+    label,
+    confidence,
+    evidence,
+    source: "agent_cluster_label",
+  });
+}

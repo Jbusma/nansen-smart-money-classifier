@@ -13,10 +13,13 @@ import { z } from "zod";
 
 import {
   classifyWallet,
+  enrichRegistry,
   explainWallet,
   findSimilarWallets,
   getClusterProfile,
   getWalletContext,
+  labelCluster,
+  labelWallet,
 } from "./client.js";
 
 const SERVER_NAME = "nansen-smart-money-classifier";
@@ -318,6 +321,160 @@ function registerTools(server: McpServer): void {
             {
               type: "text" as const,
               text: `Error fetching wallet context: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── enrich_registry ─────────────────────────────────────────────────
+  server.tool(
+    "enrich_registry",
+    "Populate the protocol registry with contract labels from free sources (token lists, DeFi Llama, Etherscan). Run this when you see too many 'Unknown contract' labels in wallet context results. Optionally resolve the top-N most interacted unknown contracts via Etherscan.",
+    {
+      etherscan: z
+        .boolean()
+        .default(false)
+        .describe("Also resolve unknown contracts via Etherscan API (slower, requires API key)"),
+      top_n: z
+        .number()
+        .int()
+        .min(1)
+        .max(5000)
+        .default(500)
+        .describe("Number of top unknown contracts to resolve via Etherscan"),
+    },
+    async ({ etherscan, top_n }) => {
+      try {
+        const result = await enrichRegistry(etherscan, top_n);
+
+        const lines = [
+          "Protocol Registry Enrichment Complete",
+          "",
+          `  Hardcoded seed: ${result.hardcoded} addresses`,
+          `  Token list (CoinGecko): ${result.token_list} addresses`,
+          `  DeFi Llama protocols: ${result.defillama} addresses`,
+        ];
+
+        if (etherscan) {
+          lines.push(`  Etherscan lookups: ${result.etherscan} resolved`);
+        }
+
+        lines.push("", `Total registry size: ${result.total_registry_size} addresses`);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: lines.join("\n"),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error enriching registry: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── label_wallet ────────────────────────────────────────────────────
+  server.tool(
+    "label_wallet",
+    "Assign a behavioral label to a single wallet address. Use this after analyzing a wallet's on-chain context to record your classification decision as ground truth.",
+    {
+      wallet_address: z
+        .string()
+        .regex(/^0x[a-fA-F0-9]{40}$/)
+        .describe("Ethereum wallet address (0x...)"),
+      label: z
+        .string()
+        .min(1)
+        .describe("Behavioral label (e.g. 'defi_lender', 'dex_trader', 'institutional_otc')"),
+      confidence: z
+        .number()
+        .min(0)
+        .max(1)
+        .describe("Confidence in the label (0.0 to 1.0)"),
+      evidence: z
+        .string()
+        .default("")
+        .describe("Brief explanation of why this label was chosen"),
+    },
+    async ({ wallet_address, label, confidence, evidence }) => {
+      try {
+        const result = await labelWallet(wallet_address, label, confidence, evidence);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Labeled ${wallet_address} as "${result.label}" (${result.labeled} wallet written to ground truth)`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error labeling wallet: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── label_cluster ───────────────────────────────────────────────────
+  server.tool(
+    "label_cluster",
+    "Bulk-label ALL wallets in a cluster with a single behavioral label. Use this after profiling a cluster to apply labels to all its members at once. Cluster IDs: 0, 1, 2, or -1 for noise.",
+    {
+      cluster_id: z
+        .number()
+        .int()
+        .min(-1)
+        .describe("Cluster ID (0, 1, 2, or -1 for noise)"),
+      label: z
+        .string()
+        .min(1)
+        .describe("Behavioral label to apply to all wallets in the cluster"),
+      confidence: z
+        .number()
+        .min(0)
+        .max(1)
+        .describe("Confidence in the label (0.0 to 1.0)"),
+      evidence: z
+        .string()
+        .default("")
+        .describe("Summary of cluster behavioral profile supporting this label"),
+    },
+    async ({ cluster_id, label, confidence, evidence }) => {
+      try {
+        const result = await labelCluster(cluster_id, label, confidence, evidence);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Labeled cluster ${cluster_id}: ${result.labeled} wallets assigned label "${result.label}"`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error labeling cluster: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
           isError: true,

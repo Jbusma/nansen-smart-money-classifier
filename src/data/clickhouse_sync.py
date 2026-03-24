@@ -70,6 +70,18 @@ ENGINE = ReplacingMergeTree()
 ORDER BY address
 """
 
+PROTOCOL_REGISTRY_DDL = """
+CREATE TABLE IF NOT EXISTS {database}.protocol_registry (
+    address       String,
+    label         String,
+    category      String,
+    source        String,
+    updated_at    DateTime DEFAULT now()
+)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY address
+"""
+
 LLM_NARRATIVE_CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS {database}.llm_narrative_cache (
     wallet_address  String,
@@ -207,6 +219,9 @@ def create_tables(*, include_raw: bool = True) -> None:
 
     client.command(GROUND_TRUTH_DDL.format(database=db))
     logger.info("ensured_table_exists", table="ground_truth", database=db)
+
+    client.command(PROTOCOL_REGISTRY_DDL.format(database=db))
+    logger.info("ensured_table_exists", table="protocol_registry", database=db)
 
     client.command(LLM_NARRATIVE_CACHE_DDL.format(database=db))
     logger.info("ensured_table_exists", table="llm_narrative_cache", database=db)

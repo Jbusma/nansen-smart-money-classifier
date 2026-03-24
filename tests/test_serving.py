@@ -132,3 +132,174 @@ class TestSimilarEndpoint:
             json={"wallet_address": "0x" + "a" * 40, "top_k": 200},
         )
         assert response.status_code == 422
+
+
+class TestEnrichEndpoint:
+    def test_enrich_default_params(self, client: TestClient) -> None:
+        """Enrich with default params calls enrich_all(etherscan=False)."""
+        mock_results = {
+            "hardcoded": 17,
+            "token_list": 4954,
+            "defillama": 270,
+            "etherscan": 0,
+            "total_registry_size": 5241,
+        }
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "src.data.protocol_enrichment.enrich_all",
+                lambda **kwargs: mock_results,
+            )
+            response = client.post("/enrich", json={})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["hardcoded"] == 17
+            assert data["token_list"] == 4954
+            assert data["total_registry_size"] == 5241
+            assert data["etherscan"] == 0
+
+    def test_enrich_with_etherscan(self, client: TestClient) -> None:
+        mock_results = {
+            "hardcoded": 17,
+            "token_list": 4954,
+            "defillama": 270,
+            "etherscan": 510,
+            "total_registry_size": 5751,
+        }
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "src.data.protocol_enrichment.enrich_all",
+                lambda **kwargs: mock_results,
+            )
+            response = client.post("/enrich", json={"etherscan": True, "top_n": 100})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["etherscan"] == 510
+
+    def test_enrich_failure_returns_503(self, client: TestClient) -> None:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "src.data.protocol_enrichment.enrich_all",
+                lambda **kwargs: (_ for _ in ()).throw(RuntimeError("CH down")),
+            )
+            response = client.post("/enrich", json={})
+            assert response.status_code == 503
+
+
+class TestLabelWalletEndpoint:
+    def test_label_wallet_success(self, client: TestClient) -> None:
+        mock_client = MagicMock()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("src.data.clickhouse_sync.get_client", lambda: mock_client)
+            response = client.post(
+                "/label/wallet",
+                json={
+                    "wallet_address": "0x" + "ab" * 20,
+                    "label": "defi_power_user",
+                    "confidence": 0.85,
+                    "evidence": "High dex ratio, many protocols",
+                },
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["labeled"] == 1
+            assert data["label"] == "defi_power_user"
+            mock_client.insert.assert_called_once()
+
+    def test_label_wallet_invalid_address(self, client: TestClient) -> None:
+        response = client.post(
+            "/label/wallet",
+            json={
+                "wallet_address": "not-valid",
+                "label": "defi_power_user",
+                "confidence": 0.5,
+            },
+        )
+        assert response.status_code == 422
+
+    def test_label_wallet_missing_label(self, client: TestClient) -> None:
+        response = client.post(
+            "/label/wallet",
+            json={
+                "wallet_address": "0x" + "ab" * 20,
+                "confidence": 0.5,
+            },
+        )
+        assert response.status_code == 422
+
+    def test_label_wallet_confidence_bounds(self, client: TestClient) -> None:
+        response = client.post(
+            "/label/wallet",
+            json={
+                "wallet_address": "0x" + "ab" * 20,
+                "label": "test",
+                "confidence": 1.5,
+            },
+        )
+        assert response.status_code == 422
+
+        response = client.post(
+            "/label/wallet",
+            json={
+                "wallet_address": "0x" + "ab" * 20,
+                "label": "test",
+                "confidence": -0.1,
+            },
+        )
+        assert response.status_code == 422
+
+
+class TestLabelClusterEndpoint:
+    def test_label_cluster_success(self, client: TestClient) -> None:
+        mock_client = MagicMock()
+        mock_labels = np.array([0, 0, 1, 1, 1, -1])
+
+        mock_pipeline = {"labels_": mock_labels}
+        mock_df = MagicMock()
+        mock_df.loc.__getitem__ = MagicMock(
+            return_value=MagicMock(tolist=MagicMock(return_value=["0x" + "aa" * 20, "0x" + "bb" * 20]))
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("src.data.clickhouse_sync.get_client", lambda: mock_client)
+            mp.setattr("joblib.load", lambda _path: mock_pipeline)
+            mp.setattr("pandas.read_parquet", lambda _path, **kw: mock_df)
+            mp.setattr("pathlib.Path.exists", lambda _self: True)
+
+            response = client.post(
+                "/label/cluster",
+                json={
+                    "cluster_id": 0,
+                    "label": "institutional_otc",
+                    "confidence": 0.9,
+                    "evidence": "High volume, low frequency",
+                },
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["labeled"] == 2
+            assert data["label"] == "institutional_otc"
+            mock_client.insert.assert_called_once()
+
+    def test_label_cluster_invalid_id(self, client: TestClient) -> None:
+        response = client.post(
+            "/label/cluster",
+            json={
+                "cluster_id": -2,
+                "label": "test",
+                "confidence": 0.5,
+            },
+        )
+        assert response.status_code == 422
+
+    def test_label_cluster_missing_label(self, client: TestClient) -> None:
+        response = client.post(
+            "/label/cluster",
+            json={
+                "cluster_id": 0,
+                "confidence": 0.5,
+            },
+        )
+        assert response.status_code == 422

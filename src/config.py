@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str = ""
 
+    # Etherscan (free tier: 5 req/sec)
+    etherscan_api_key: str = ""
+
     # Model
     model_artifacts_path: str = "models/artifacts"
     random_seed: int = 42

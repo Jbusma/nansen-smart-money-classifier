@@ -20,7 +20,6 @@ import structlog
 
 from src.config import settings
 from src.data.clickhouse_sync import get_client
-from src.data.ground_truth import KNOWN_PROTOCOL_ADDRESSES
 
 logger = structlog.get_logger(__name__)
 
@@ -87,7 +86,7 @@ def get_top_contracts(
     """Return the top contracts this wallet has interacted with.
 
     Each result includes the contract address, interaction count, and a
-    human-readable protocol label (if the address is in our registry).
+    human-readable protocol label looked up from the protocol_registry table.
     """
     client = get_client()
     db = settings.clickhouse_database
@@ -96,12 +95,16 @@ def get_top_contracts(
         client,
         f"""
         SELECT
-            to_address,
-            count()             AS interaction_count,
-            sum(value_eth)      AS total_eth
-        FROM {db}.raw_contract_interactions
-        WHERE from_address = {{addr:String}}
-        GROUP BY to_address
+            ci.to_address,
+            count()                 AS interaction_count,
+            sum(ci.value_eth)       AS total_eth,
+            pr.label                AS protocol_label,
+            pr.category             AS protocol_category
+        FROM {db}.raw_contract_interactions ci
+        LEFT JOIN (SELECT address, label, category FROM {db}.protocol_registry FINAL) AS pr
+            ON ci.to_address = pr.address
+        WHERE ci.from_address = {{addr:String}}
+        GROUP BY ci.to_address, pr.label, pr.category
         ORDER BY interaction_count DESC
         LIMIT {{lim:UInt32}}
         """,
@@ -110,45 +113,17 @@ def get_top_contracts(
 
     contracts: list[dict[str, Any]] = []
     for row in rows:
-        addr = row[0]
-        label = KNOWN_PROTOCOL_ADDRESSES.get(addr.lower())
-        category = _categorize_protocol(addr.lower())
         contracts.append(
             {
-                "address": addr,
-                "protocol_label": label,
-                "category": category,
+                "address": row[0],
+                "protocol_label": row[3] or None,
+                "category": row[4] or "unknown",
                 "interaction_count": int(row[1]),
                 "total_eth": float(row[2]),
             }
         )
 
     return contracts
-
-
-def _categorize_protocol(address: str) -> str:
-    """Map a known protocol address to a category string."""
-    from src.data.ground_truth import (
-        BRIDGE_ADDRESSES,
-        DEX_ROUTER_ADDRESSES,
-        LENDING_PROTOCOL_ADDRESSES,
-        NFT_MARKETPLACE_ADDRESSES,
-    )
-
-    addr_sets: list[tuple[set[str], str]] = [
-        (DEX_ROUTER_ADDRESSES, "dex"),
-        (NFT_MARKETPLACE_ADDRESSES, "nft_marketplace"),
-        (LENDING_PROTOCOL_ADDRESSES, "lending"),
-        (BRIDGE_ADDRESSES, "bridge"),
-    ]
-    for addr_set, cat in addr_sets:
-        if address in addr_set:
-            return cat
-
-    if address in KNOWN_PROTOCOL_ADDRESSES:
-        return "exchange"
-
-    return "unknown"
 
 
 def get_token_activity(

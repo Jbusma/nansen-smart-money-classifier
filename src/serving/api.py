@@ -370,6 +370,167 @@ async def wallet_context(address: str) -> WalletContextResponse:
 
 
 # ---------------------------------------------------------------------------
+# Protocol enrichment
+# ---------------------------------------------------------------------------
+
+
+class EnrichRequest(BaseModel):
+    etherscan: bool = Field(default=False, description="Also resolve via Etherscan API")
+    top_n: int = Field(default=500, ge=1, le=5000, description="Top-N unknown contracts for Etherscan")
+
+
+class EnrichResponse(BaseModel):
+    hardcoded: int = 0
+    token_list: int = 0
+    defillama: int = 0
+    etherscan: int = 0
+    total_registry_size: int = 0
+
+
+@app.post("/enrich", response_model=EnrichResponse)
+async def enrich_registry(req: EnrichRequest | None = None) -> EnrichResponse:
+    if req is None:
+        req = EnrichRequest()
+    """Run protocol registry enrichment from free sources."""
+    from src.data.protocol_enrichment import enrich_all
+
+    try:
+        results = enrich_all(etherscan=req.etherscan, top_n=req.top_n)
+    except Exception as exc:
+        logger.error("enrichment_failed", error=str(exc))
+        raise HTTPException(503, f"Enrichment failed: {exc}") from exc
+
+    return EnrichResponse(**{k: v for k, v in results.items() if k in EnrichResponse.model_fields})
+
+
+# ---------------------------------------------------------------------------
+# Wallet labeling
+# ---------------------------------------------------------------------------
+
+
+class LabelWalletRequest(BaseModel):
+    wallet_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
+    label: str = Field(..., min_length=1, max_length=100)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    evidence: str = Field(default="", max_length=2000)
+    source: str = Field(default="agent_verified")
+
+
+class LabelClusterRequest(BaseModel):
+    cluster_id: int = Field(..., ge=-1)
+    label: str = Field(..., min_length=1, max_length=100)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    evidence: str = Field(default="", max_length=2000)
+    source: str = Field(default="agent_cluster_label")
+
+
+class LabelResponse(BaseModel):
+    labeled: int
+    label: str
+
+
+@app.post("/label/wallet", response_model=LabelResponse)
+async def label_wallet(req: LabelWalletRequest) -> LabelResponse:
+    """Assign a behavioral label to a single wallet."""
+    from src.data.clickhouse_sync import get_client
+
+    client = get_client()
+    db = settings.clickhouse_database
+
+    client.insert(
+        f"{db}.ground_truth",
+        [
+            [
+                req.wallet_address.lower(),
+                req.label,
+                req.source,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,  # metrics filled later
+                req.wallet_address.lower(),
+            ]
+        ],
+        column_names=[
+            "address",
+            "label",
+            "source",
+            "total_tx",
+            "dex_tx",
+            "dex_ratio",
+            "total_eth",
+            "tx_per_day",
+            "wallet_address",
+        ],
+    )
+    return LabelResponse(labeled=1, label=req.label)
+
+
+@app.post("/label/cluster", response_model=LabelResponse)
+async def label_cluster(req: LabelClusterRequest) -> LabelResponse:
+    """Bulk-label all wallets in a cluster using clustering pipeline assignments."""
+    from pathlib import Path
+
+    import joblib
+    import pandas as pd
+
+    from src.data.clickhouse_sync import get_client
+
+    pipeline_path = Path(settings.model_artifacts_path) / "clustering_pipeline.joblib"
+    features_path = Path("data/features.parquet")
+
+    if not pipeline_path.exists() or not features_path.exists():
+        raise HTTPException(404, "clustering_pipeline.joblib or features.parquet not found")
+
+    pipeline = joblib.load(pipeline_path)
+    labels = pipeline["labels_"]
+    df = pd.read_parquet(features_path, columns=["wallet_address"])
+
+    # -1 = noise, 0/1/2 = clusters
+    mask = labels == req.cluster_id
+    addresses = df.loc[mask, "wallet_address"].tolist()
+
+    if not addresses:
+        raise HTTPException(404, f"No wallets found for cluster {req.cluster_id}")
+
+    client = get_client()
+    db = settings.clickhouse_database
+
+    rows = [
+        [
+            addr.lower(),
+            req.label,
+            req.source,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            addr.lower(),
+        ]
+        for addr in addresses
+    ]
+
+    client.insert(
+        f"{db}.ground_truth",
+        rows,
+        column_names=[
+            "address",
+            "label",
+            "source",
+            "total_tx",
+            "dex_tx",
+            "dex_ratio",
+            "total_eth",
+            "tx_per_day",
+            "wallet_address",
+        ],
+    )
+    return LabelResponse(labeled=len(rows), label=req.label)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

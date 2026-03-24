@@ -55,11 +55,13 @@ services:
     build:
       context: ./mcp_server
       dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
     environment:
       API_URL: http://api:8000
+      MCP_PORT: "3001"
     depends_on:
       - api
-    stdin_open: true
 
 volumes:
   clickhouse_data:

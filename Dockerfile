@@ -8,8 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc g++ && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e "." 2>/dev/null || pip install --no-cache-dir .
+RUN pip install --no-cache-dir .
 
 COPY src/ src/
 COPY models/artifacts/ models/artifacts/
