@@ -41,10 +41,15 @@ services:
     env_file: .env
     environment:
       API_URL: http://api:8000
+      CLICKHOUSE_HOST: clickhouse
     depends_on:
-      - api
+      clickhouse:
+        condition: service_healthy
+      api:
+        condition: service_started
     volumes:
       - ./models/artifacts:/app/models/artifacts:ro
+      - ./data/ground_truth.parquet:/app/data/ground_truth.parquet:ro
 
   # ── MCP server ────────────────────────────────────────────────────
   mcp-server:

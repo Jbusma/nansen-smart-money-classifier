@@ -31,7 +31,6 @@ st.set_page_config(
 
 API_URL = "http://localhost:8000"
 
-FEATURES_PATH = Path("data/features.parquet")
 PIPELINE_PATH = Path("models/artifacts/clustering_pipeline.joblib")
 LABELS_PATH = Path("models/artifacts/cluster_labels.json")
 GROUND_TRUTH_PATH = Path("data/ground_truth.parquet")
@@ -44,9 +43,28 @@ CLUSTER_COLORS = px.colors.qualitative.Set2
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_features() -> pd.DataFrame:
-    return pd.read_parquet(FEATURES_PATH)
+    """Load wallet features from ClickHouse, falling back to local parquet."""
+    try:
+        from src.data.clickhouse_sync import get_client
+
+        client = get_client()
+        from src.config import settings
+
+        db = settings.clickhouse_database
+        result = client.query(f"SELECT * FROM {db}.wallet_features")
+        if result.result_rows:
+            return pd.DataFrame(result.result_rows, columns=result.column_names)
+    except Exception:
+        pass
+
+    # Fallback to local parquet for dev without ClickHouse
+    features_path = Path("data/features.parquet")
+    if features_path.exists():
+        return pd.read_parquet(features_path)
+
+    return pd.DataFrame()
 
 
 @st.cache_resource
@@ -115,13 +133,13 @@ page = st.sidebar.radio(
 if page == "Cluster Explorer":
     st.header("Cluster Explorer")
 
-    if not FEATURES_PATH.exists() or not PIPELINE_PATH.exists():
+    features_df = load_features()
+    if features_df.empty or not PIPELINE_PATH.exists():
         st.info(
             "Clustering artifacts not found. Run the clustering pipeline first:\n\n"
             "```bash\npython -m src.models.clustering\n```"
         )
     else:
-        features_df = load_features()
         pipeline = load_pipeline()
 
         if pipeline.labels_ is None or pipeline.embedding_ is None:
