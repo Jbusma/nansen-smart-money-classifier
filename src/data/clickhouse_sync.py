@@ -54,6 +54,22 @@ ENGINE = MergeTree()
 ORDER BY wallet_address
 """
 
+GROUND_TRUTH_DDL = """
+CREATE TABLE IF NOT EXISTS {database}.ground_truth (
+    address         String,
+    label           String,
+    source          String,
+    total_tx        Float64,
+    dex_tx          Float64,
+    dex_ratio       Float64,
+    total_eth       Float64,
+    tx_per_day      Float64,
+    wallet_address  String
+)
+ENGINE = ReplacingMergeTree()
+ORDER BY address
+"""
+
 LLM_NARRATIVE_CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS {database}.llm_narrative_cache (
     wallet_address  String,
@@ -189,6 +205,9 @@ def create_tables(*, include_raw: bool = True) -> None:
     client.command(WALLET_FEATURES_DDL.format(database=db))
     logger.info("ensured_table_exists", table="wallet_features", database=db)
 
+    client.command(GROUND_TRUTH_DDL.format(database=db))
+    logger.info("ensured_table_exists", table="ground_truth", database=db)
+
     client.command(LLM_NARRATIVE_CACHE_DDL.format(database=db))
     logger.info("ensured_table_exists", table="llm_narrative_cache", database=db)
 
@@ -242,6 +261,50 @@ def sync_features(df: pd.DataFrame) -> None:
         table="wallet_features",
         rows=len(insert_df),
     )
+
+
+def sync_ground_truth(parquet_path: str | Path = "data/ground_truth.parquet") -> int:
+    """Load ground truth labels into ClickHouse (full replace).
+
+    Returns the number of rows inserted.
+    """
+    path = Path(parquet_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Ground truth not found: {path}")
+
+    df = pd.read_parquet(path)
+    if df.empty:
+        logger.warning("sync_ground_truth_empty")
+        return 0
+
+    client = get_client()
+    db = settings.clickhouse_database
+
+    client.command(f"TRUNCATE TABLE IF EXISTS {db}.ground_truth")
+
+    # Ensure column order and types match DDL
+    expected_cols = [
+        "address",
+        "label",
+        "source",
+        "total_tx",
+        "dex_tx",
+        "dex_ratio",
+        "total_eth",
+        "tx_per_day",
+        "wallet_address",
+    ]
+    for col in expected_cols:
+        if col not in df.columns:
+            df[col] = "" if col in ("address", "label", "source", "wallet_address") else 0.0
+
+    insert_df = df[expected_cols].copy()
+    str_cols = insert_df.select_dtypes(include=["object"]).columns
+    insert_df[str_cols] = insert_df[str_cols].fillna("")
+
+    client.insert_df(f"{db}.ground_truth", insert_df)
+    logger.info("synced_ground_truth", rows=len(insert_df))
+    return len(insert_df)
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +510,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ClickHouse sync utilities.")
     parser.add_argument("--sync-raw", action="store_true", help="Load raw parquets into ClickHouse.")
     parser.add_argument("--sync-features", action="store_true", help="Load features.parquet into ClickHouse.")
+    parser.add_argument("--sync-ground-truth", action="store_true", help="Load ground_truth.parquet into ClickHouse.")
     parser.add_argument("--batch-size", type=int, default=100_000, help="Rows per INSERT batch.")
     args = parser.parse_args()
 
@@ -467,3 +531,7 @@ if __name__ == "__main__":
             logger.info("synced_features", rows=len(features_df))
         else:
             logger.warning("features_parquet_not_found", path=str(features_path))
+
+    if args.sync_ground_truth:
+        rows = sync_ground_truth()
+        logger.info("synced_ground_truth", rows=rows)

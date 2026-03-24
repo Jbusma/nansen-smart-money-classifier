@@ -81,8 +81,20 @@ def load_cluster_labels() -> dict[str, str]:
     return {}
 
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_ground_truth() -> pd.DataFrame | None:
+    """Load ground truth labels from ClickHouse, falling back to local parquet."""
+    try:
+        from src.config import settings
+        from src.data.clickhouse_sync import get_client
+
+        client = get_client()
+        db = settings.clickhouse_database
+        result = client.query(f"SELECT * FROM {db}.ground_truth")
+        if result.result_rows:
+            return pd.DataFrame(result.result_rows, columns=result.column_names)
+    except Exception:
+        pass
     if GROUND_TRUTH_PATH.exists():
         return pd.read_parquet(GROUND_TRUTH_PATH)
     return None
@@ -608,8 +620,8 @@ if page == "Cluster Explorer":
                 else:
                     st.info(
                         "No ground truth data found. Run "
-                        "`python -m src.data.ground_truth` to generate "
-                        "heuristic labels, then reload."
+                        "`python -m src.data.ground_truth` to generate labels, then "
+                        "`python -m src.data.clickhouse_sync --sync-ground-truth` to load into ClickHouse."
                     )
 
             # ---- Tab 8: Explore Wallets ----

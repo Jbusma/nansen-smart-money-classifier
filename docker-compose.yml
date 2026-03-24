@@ -49,7 +49,6 @@ services:
         condition: service_started
     volumes:
       - ./models/artifacts:/app/models/artifacts:ro
-      - ./data/ground_truth.parquet:/app/data/ground_truth.parquet:ro
 
   # ── MCP server ────────────────────────────────────────────────────
   mcp-server:
